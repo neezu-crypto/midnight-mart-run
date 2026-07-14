@@ -354,9 +354,10 @@ function ensureAudio(){
 }
 ['pointerdown','keydown'].forEach(evt => window.addEventListener(evt, ensureAudio, {once:false}));
 
+const MAX_SFX_GAIN = 0.15; // 슬라이더 100%에서도 실제 음량은 이 값을 넘지 않음
 function catVolume(category){
   const c = soundSettings[category];
-  return (c && c.on) ? c.vol : 0;
+  return (c && c.on) ? c.vol * MAX_SFX_GAIN : 0;
 }
 function playTone(freq, dur, type, category, delay=0){
   if(!audioCtx) return;
@@ -367,7 +368,7 @@ function playTone(freq, dur, type, category, delay=0){
   osc.type = type; osc.frequency.value = freq;
   const t0 = audioCtx.currentTime + delay;
   gain.gain.setValueAtTime(0, t0);
-  gain.gain.linearRampToValueAtTime(vol*0.4, t0+0.012);
+  gain.gain.linearRampToValueAtTime(vol, t0+0.012);
   gain.gain.exponentialRampToValueAtTime(0.001, t0+dur);
   osc.connect(gain); gain.connect(audioCtx.destination);
   osc.start(t0); osc.stop(t0+dur+0.02);
