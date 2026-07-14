@@ -188,8 +188,8 @@
 
       <div class="howto">
         <p class="howto-title">게임 방법</p>
-        <p><b class="amber-text">주인</b>(방장) — 도둑에게 다가가 <b>스페이스바</b>로 체포한다. 손에 물건이 없으면 체포가 무효(사과) 처리된다.</p>
-        <p><b class="mint-text">도둑</b>(시청자, 최대 3인) — 물건에 닿으면 자동으로 줍고, <b>출구</b>로 나가면 탈출 성공. 많이 들수록 느려지니 욕심과 안전 사이에서 선택하자.</p>
+        <p><b class="amber-text">주인</b>(방장) — 도둑에게 다가가 <b>스페이스바</b>로 체포한다. 손에 물건이 없으면 체포가 무효 처리되고 도둑은 5초간 사과하며 그 자리에 묶인다.</p>
+        <p><b class="mint-text">도둑</b>(시청자, 최대 3인) — 물건에 닿으면 자동으로 줍고, <b>출구</b>로 나가면 탈출 성공. 위험하면 <b>스페이스바</b>로 소지품을 내려놓고 몸을 가볍게 할 수 있다. 많이 들수록 느려지니 욕심과 안전 사이에서 선택하자.</p>
         <p>이동은 <b>WASD</b> 또는 <b>방향키</b>. 전원 탈출/체포되거나 제한시간이 끝나면 라운드가 종료되고 정산된다.</p>
       </div>
 
@@ -232,7 +232,7 @@
         </div>
       </div>
 
-      <div class="controls-hint">WASD/방향키 이동 · 스페이스 체포(주인) · 도둑은 닿으면 자동 줍기</div>
+      <div class="controls-hint">WASD/방향키 이동 · 스페이스 체포(주인) / 소지품 내려놓기(도둑) · 도둑은 닿으면 자동 줍기</div>
     </div>
   </div>
 
@@ -266,6 +266,7 @@ const BASE_SPEED = 130; // px/s (기존 260에서 -50%)
 const ROUND_DURATION = 90; // sec, placeholder — 다음 단계에서 밸런스 조정
 const COUNTDOWN_SEC = 3;
 const APOLOGY_MS = 5000;
+const DROP_PICKUP_COOLDOWN_MS = 800; // 방금 내려놓은 물건을 같은 프레임에 바로 다시 줍지 않도록
 const SEND_INTERVAL = 100; // ms, 10Hz throttle
 const INTERP_MS = 150;
 
@@ -298,7 +299,7 @@ const S = {
   phase:'waiting', timer:{startedAt:0,durationSec:ROUND_DURATION}, hostSessionId:null,
   players:{}, items:{}, settlement:{},
   local:{x:800,y:550}, keys:{}, wasMoving:false, lastSendTs:0,
-  remoteRender:{}, finalizing:false, lastTs:0, localCarryWeight:0
+  remoteRender:{}, finalizing:false, lastTs:0, localCarryWeight:0, recentlyDropped:{}
 };
 
 function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
@@ -511,7 +512,9 @@ window.addEventListener('keydown', (e)=>{
   if(moveKeys.includes(e.code)){ S.keys[e.code] = true; e.preventDefault(); }
   if(e.code === 'Space'){
     e.preventDefault();
-    if(!e.repeat && S.phase === 'playing' && S.role === 'owner') arrestAttempt();
+    if(e.repeat || S.phase !== 'playing') return;
+    if(S.role === 'owner') arrestAttempt();
+    else if(S.role === 'thief') dropItems();
   }
 });
 window.addEventListener('keyup', (e)=>{ S.keys[e.code] = false; });
@@ -574,8 +577,11 @@ function checkPickup(){
   if(S.role !== 'thief') return;
   const me = S.players[mySessionId];
   if(!me || me.status !== 'active') return;
+  const now = Date.now();
   Object.entries(S.items).forEach(([id,item])=>{
     if(item.state !== 'onFloor') return;
+    const droppedAt = S.recentlyDropped[id];
+    if(droppedAt && now-droppedAt < DROP_PICKUP_COOLDOWN_MS) return;
     const dx = item.x - S.local.x, dy = item.y - S.local.y;
     if(dx*dx+dy*dy < PICKUP_RADIUS*PICKUP_RADIUS){
       S.localCarryWeight += item.weight;
@@ -585,6 +591,29 @@ function checkPickup(){
       });
     }
   });
+}
+
+function dropItems(){
+  const me = S.players[mySessionId];
+  if(!me || me.status !== 'active' || !me.carriedItems) return;
+  const itemIds = Object.keys(me.carriedItems);
+  if(itemIds.length === 0) return;
+
+  const updates = {};
+  const now = Date.now();
+  itemIds.forEach(itemId=>{
+    updates[`rooms/${S.code}/items/${itemId}/state`] = 'onFloor';
+    updates[`rooms/${S.code}/items/${itemId}/carriedBy`] = null;
+    updates[`rooms/${S.code}/items/${itemId}/x`] = Math.round(S.local.x);
+    updates[`rooms/${S.code}/items/${itemId}/y`] = Math.round(S.local.y);
+    S.recentlyDropped[itemId] = now;
+  });
+  updates[`rooms/${S.code}/players/${mySessionId}/carryWeight`] = 0;
+  updates[`rooms/${S.code}/players/${mySessionId}/carriedItems`] = null;
+  update(ref(db), updates);
+
+  S.localCarryWeight = 0;
+  showToast('물건을 내려놓았다');
 }
 
 function arrestAttempt(){
