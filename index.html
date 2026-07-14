@@ -734,7 +734,7 @@ function drawFloor(camX, camY){
   const startTx = Math.floor(camX/TILE_SIZE), startTy = Math.floor(camY/TILE_SIZE);
   for(let ty=startTy; ty*TILE_SIZE < camY+VIEW_H; ty++){
     for(let tx=startTx; tx*TILE_SIZE < camX+VIEW_W; tx++){
-      ctx.fillStyle = (tx+ty)%2===0 ? '#151822' : '#10131A';
+      ctx.fillStyle = (tx+ty)%2===0 ? '#E8DCC0' : '#DECCA0';
       ctx.fillRect(tx*TILE_SIZE-camX, ty*TILE_SIZE-camY, TILE_SIZE, TILE_SIZE);
     }
   }
@@ -769,10 +769,12 @@ function render(){
     ctx.fillRect(ex.x-camX, ex.y-camY, ex.w, ex.h);
     ctx.strokeRect(ex.x-camX, ex.y-camY, ex.w, ex.h);
     ctx.save();
-    ctx.shadowColor = color; ctx.shadowBlur = 10;
-    ctx.fillStyle = color;
     ctx.font = "bold 12px 'IBM Plex Mono', monospace";
     ctx.textAlign = 'center';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(12,14,19,0.75)';
+    ctx.strokeText(ex.label, ex.x-camX+ex.w/2, ex.y-camY+ex.h/2+4);
+    ctx.shadowColor = color; ctx.shadowBlur = 10;
+    ctx.fillStyle = color;
     ctx.fillText(ex.label, ex.x-camX+ex.w/2, ex.y-camY+ex.h/2+4);
     ctx.restore();
   });
@@ -823,7 +825,10 @@ function render(){
     ctx.fillText(ROLE_EMOJI[p.role], sx, sy+1);
     ctx.textBaseline = 'alphabetic';
 
-    ctx.fillStyle = '#EDEDE3'; ctx.font="10px 'Noto Sans KR', sans-serif";
+    ctx.font="bold 10px 'Noto Sans KR', sans-serif";
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(12,14,19,0.85)';
+    ctx.strokeText(p.nickname + (isFrozen?' (사과중)':''), sx, sy-PLAYER_RADIUS-8);
+    ctx.fillStyle = '#FFFFFF';
     ctx.fillText(p.nickname + (isFrozen?' (사과중)':''), sx, sy-PLAYER_RADIUS-8);
     ctx.textAlign='left';
   });
