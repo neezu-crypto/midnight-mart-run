@@ -99,11 +99,14 @@
 
   /* ---- play screen ---- */
   #screen-play{position:relative; display:flex; flex-direction:column; align-items:center;}
-  .canvas-wrap{position:relative; border:1px solid var(--line); border-radius:6px; overflow:hidden; background:#0C0E13;}
+  .canvas-wrap{
+    position:relative; border:1px solid var(--amber-dim); border-radius:6px; overflow:hidden; background:#0C0E13;
+    box-shadow:0 0 0 1px rgba(0,0,0,0.4), 0 20px 60px rgba(0,0,0,0.5), 0 0 40px rgba(245,166,35,0.06);
+  }
   canvas{display:block;}
   .hud{
     position:absolute; top:10px; left:10px; font-family:'IBM Plex Mono',monospace; font-size:12px;
-    background:rgba(12,14,19,0.72); border:1px solid var(--line); border-radius:4px; padding:8px 12px;
+    background:rgba(12,14,19,0.78); backdrop-filter:blur(2px); border:1px solid var(--line); border-radius:4px; padding:8px 12px;
     line-height:1.7; pointer-events:none;
   }
   .hud .amber{color:var(--amber);}
@@ -273,9 +276,9 @@ const INTERP_MS = 150;
 const OWNER_SPAWNS = [{x:800,y:350},{x:800,y:750},{x:600,y:550},{x:1000,y:550}];
 const THIEF_SPAWNS = [{x:200,y:300},{x:200,y:550},{x:200,y:800}];
 const OBSTACLES = [
-  {x:380,y:150,w:180,h:70}, {x:380,y:515,w:180,h:70}, {x:380,y:880,w:180,h:70},
-  {x:1040,y:150,w:180,h:70}, {x:1040,y:515,w:180,h:70}, {x:1040,y:880,w:180,h:70},
-  {x:700,y:500,w:200,h:100}
+  {x:380,y:150,w:180,h:70,label:'진열대',icon:'🛒'}, {x:380,y:515,w:180,h:70,label:'진열대',icon:'🛒'}, {x:380,y:880,w:180,h:70,label:'창고',icon:'📦'},
+  {x:1040,y:150,w:180,h:70,label:'진열대',icon:'🛒'}, {x:1040,y:515,w:180,h:70,label:'진열대',icon:'🛒'}, {x:1040,y:880,w:180,h:70,label:'창고',icon:'📦'},
+  {x:700,y:500,w:200,h:100,label:'계산대',icon:'💳'}
 ];
 const EXITS = [
   {x:0,y:0,w:140,h:100,label:'정문',type:'main'},
@@ -284,6 +287,10 @@ const EXITS = [
   {x:MAP_W-140,y:MAP_H-110,w:140,h:110,label:'정문',type:'main'}
 ];
 const TIER_COLOR = {S:'#F5A623', M:'#4FD1C5', L:'#E4483D'};
+const TIER_EMOJI = {S:'🥫', M:'🍾', L:'📺'};
+const ROLE_EMOJI = {owner:'🕵️', thief:'🥷'};
+const EMOJI_FONT = "'Segoe UI Emoji','Noto Color Emoji','Apple Color Emoji',sans-serif";
+const TILE_SIZE = 40;
 
 // ---------------- session ----------------
 function getSessionId(){
@@ -723,6 +730,24 @@ function updateRemoteInterpolation(){
   });
 }
 
+function drawFloor(camX, camY){
+  const startTx = Math.floor(camX/TILE_SIZE), startTy = Math.floor(camY/TILE_SIZE);
+  for(let ty=startTy; ty*TILE_SIZE < camY+VIEW_H; ty++){
+    for(let tx=startTx; tx*TILE_SIZE < camX+VIEW_W; tx++){
+      ctx.fillStyle = (tx+ty)%2===0 ? '#151822' : '#10131A';
+      ctx.fillRect(tx*TILE_SIZE-camX, ty*TILE_SIZE-camY, TILE_SIZE, TILE_SIZE);
+    }
+  }
+}
+
+function drawGlow(sx, sy, radius, color){
+  const g = ctx.createRadialGradient(sx,sy,0,sx,sy,radius);
+  g.addColorStop(0, color);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(sx,sy,radius,0,Math.PI*2); ctx.fill();
+}
+
 function render(){
   ctx.save();
   ctx.scale(SCALE, SCALE);
@@ -735,26 +760,46 @@ function render(){
   const camX = clamp(S.local.x - VIEW_W/2, 0, MAP_W-VIEW_W);
   const camY = clamp(S.local.y - VIEW_H/2, 0, MAP_H-VIEW_H);
 
+  drawFloor(camX, camY);
+
   EXITS.forEach(ex=>{
-    ctx.fillStyle = ex.type==='main' ? 'rgba(245,166,35,0.16)' : 'rgba(79,209,197,0.14)';
-    ctx.strokeStyle = ex.type==='main' ? '#7A5A1E' : 'rgba(79,209,197,0.4)';
+    const color = ex.type==='main' ? '#F5A623' : '#4FD1C5';
+    ctx.fillStyle = ex.type==='main' ? 'rgba(245,166,35,0.12)' : 'rgba(79,209,197,0.1)';
+    ctx.strokeStyle = ex.type==='main' ? 'rgba(245,166,35,0.5)' : 'rgba(79,209,197,0.5)';
     ctx.fillRect(ex.x-camX, ex.y-camY, ex.w, ex.h);
     ctx.strokeRect(ex.x-camX, ex.y-camY, ex.w, ex.h);
-    ctx.fillStyle = ex.type==='main' ? '#F5A623' : '#4FD1C5';
-    ctx.font = '10px IBM Plex Mono, monospace';
-    ctx.fillText(ex.label, ex.x-camX+6, ex.y-camY+16);
+    ctx.save();
+    ctx.shadowColor = color; ctx.shadowBlur = 10;
+    ctx.fillStyle = color;
+    ctx.font = "bold 12px 'IBM Plex Mono', monospace";
+    ctx.textAlign = 'center';
+    ctx.fillText(ex.label, ex.x-camX+ex.w/2, ex.y-camY+ex.h/2+4);
+    ctx.restore();
   });
 
-  ctx.fillStyle = '#1E2330'; ctx.strokeStyle = '#2A2F3B';
-  OBSTACLES.forEach(o=>{ ctx.fillRect(o.x-camX,o.y-camY,o.w,o.h); ctx.strokeRect(o.x-camX,o.y-camY,o.w,o.h); });
+  OBSTACLES.forEach(o=>{
+    const x=o.x-camX, y=o.y-camY;
+    const g = ctx.createLinearGradient(x,y,x,y+o.h);
+    g.addColorStop(0,'#232838'); g.addColorStop(1,'#181C28');
+    ctx.fillStyle = g; ctx.strokeStyle='#2A2F3B';
+    ctx.fillRect(x,y,o.w,o.h); ctx.strokeRect(x,y,o.w,o.h);
+    ctx.textAlign='center';
+    ctx.font = `18px ${EMOJI_FONT}`;
+    ctx.fillText(o.icon, x+o.w/2, y+o.h/2);
+    ctx.fillStyle='#9BA0AE';
+    ctx.font = "10px 'IBM Plex Mono', monospace";
+    ctx.fillText(o.label, x+o.w/2, y+o.h-6);
+  });
 
   Object.values(S.items).forEach(item=>{
     if(item.state !== 'onFloor') return;
     const x = item.x-camX, y = item.y-camY;
-    if(x<-10||x>VIEW_W+10||y<-10||y>VIEW_H+10) return;
-    ctx.fillStyle = TIER_COLOR[item.tier];
-    const r = item.tier==='L'?7:item.tier==='M'?5.5:4;
-    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    if(x<-16||x>VIEW_W+16||y<-16||y>VIEW_H+16) return;
+    drawGlow(x, y, 16, item.tier==='L' ? 'rgba(228,72,61,0.35)' : item.tier==='M' ? 'rgba(79,209,197,0.3)' : 'rgba(245,166,35,0.25)');
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `${item.tier==='L'?18:item.tier==='M'?15:13}px ${EMOJI_FONT}`;
+    ctx.fillText(TIER_EMOJI[item.tier], x, y);
+    ctx.textBaseline = 'alphabetic';
   });
 
   Object.entries(S.players).forEach(([id,p])=>{
@@ -763,13 +808,30 @@ function render(){
     if(id===mySessionId){ x=S.local.x; y=S.local.y; }
     else{ const r=S.remoteRender[id]; if(!r) return; x=r.renderX; y=r.renderY; }
     const sx=x-camX, sy=y-camY;
-    if(sx<-20||sx>VIEW_W+20||sy<-20||sy>VIEW_H+20) return;
-    ctx.fillStyle = p.role==='owner' ? '#F5A623' : '#4FD1C5';
-    ctx.beginPath(); ctx.arc(sx,sy,PLAYER_RADIUS,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#0C0E13'; ctx.font='10px Noto Sans KR'; ctx.textAlign='center';
-    ctx.fillText(p.nickname, sx, sy-PLAYER_RADIUS-6);
+    if(sx<-30||sx>VIEW_W+30||sy<-30||sy>VIEW_H+30) return;
+
+    const roleColor = p.role==='owner' ? '245,166,35' : '79,209,197';
+    const isFrozen = p.frozenUntil && Date.now() < p.frozenUntil;
+    drawGlow(sx, sy, isFrozen ? 20 : 30, `rgba(${roleColor},${isFrozen?0.45:0.28})`);
+
+    ctx.beginPath(); ctx.arc(sx,sy,PLAYER_RADIUS,0,Math.PI*2);
+    ctx.fillStyle = `rgba(${roleColor},0.22)`; ctx.fill();
+    ctx.strokeStyle = `rgba(${roleColor},0.8)`; ctx.lineWidth = 1.5; ctx.stroke();
+
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `18px ${EMOJI_FONT}`;
+    ctx.fillText(ROLE_EMOJI[p.role], sx, sy+1);
+    ctx.textBaseline = 'alphabetic';
+
+    ctx.fillStyle = '#EDEDE3'; ctx.font="10px 'Noto Sans KR', sans-serif";
+    ctx.fillText(p.nickname + (isFrozen?' (사과중)':''), sx, sy-PLAYER_RADIUS-8);
     ctx.textAlign='left';
   });
+
+  // vignette
+  const vg = ctx.createRadialGradient(VIEW_W/2,VIEW_H/2,VIEW_H*0.28, VIEW_W/2,VIEW_H/2,VIEW_H*0.72);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.55)');
+  ctx.fillStyle = vg; ctx.fillRect(0,0,VIEW_W,VIEW_H);
 
   ctx.restore();
 }
