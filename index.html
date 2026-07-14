@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>미드나잇 마트런</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#12151C; --bg-raised:#191D27; --ink:#EDEDE3; --ink-dim:#9BA0AE;
+    --amber:#F5A623; --amber-dim:#7A5A1E; --alarm:#E4483D; --mint:#4FD1C5; --line:#2A2F3B;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:var(--bg); color:var(--ink); font-family:'Noto Sans KR',sans-serif;
+    min-height:100vh; display:flex; align-items:center; justify-content:center;
+    padding:24px;
+  }
+  .display{font-family:'Oswald','Noto Sans KR',sans-serif;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  .hidden{display:none !important;}
+  h1.brand{
+    font-family:'Oswald',sans-serif; font-size:22px; text-transform:uppercase;
+    letter-spacing:0.04em; margin-bottom:22px; text-align:center;
+  }
+  h1.brand span{color:var(--amber);}
+
+  /* ---- home / lobby shared card ---- */
+  .card{
+    background:var(--bg-raised); border:1px solid var(--line); border-radius:8px;
+    padding:32px; width:100%; max-width:420px;
+  }
+  .field{margin-bottom:16px;}
+  .field label{display:block; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink-dim); margin-bottom:6px; letter-spacing:0.05em;}
+  .field input{
+    width:100%; padding:10px 12px; background:var(--bg); border:1px solid var(--line);
+    border-radius:4px; color:var(--ink); font-size:14px; font-family:'IBM Plex Mono',monospace;
+  }
+  .btn{
+    display:block; width:100%; padding:12px; border-radius:4px; border:1px solid var(--amber-dim);
+    background:transparent; color:var(--amber); font-family:'IBM Plex Mono',monospace; font-size:13px;
+    letter-spacing:0.04em; cursor:pointer; margin-top:6px;
+  }
+  .btn:hover{background:rgba(245,166,35,0.08);}
+  .btn.primary{background:var(--amber); color:#1a1400; font-weight:600;}
+  .btn.primary:hover{background:#ffb733;}
+  .btn.mint{border-color:rgba(79,209,197,0.4); color:var(--mint);}
+  .btn.mint:hover{background:rgba(79,209,197,0.08);}
+  .divider{text-align:center; color:var(--ink-dim); font-size:11.5px; margin:22px 0; font-family:'IBM Plex Mono',monospace;}
+
+  .room-code{
+    font-family:'IBM Plex Mono',monospace; font-size:32px; letter-spacing:0.12em;
+    color:var(--amber); text-align:center; margin-bottom:6px;
+  }
+  .room-code-label{text-align:center; color:var(--ink-dim); font-size:11.5px; margin-bottom:20px; font-family:'IBM Plex Mono',monospace;}
+  .player-list{list-style:none; margin-bottom:20px;}
+  .player-list li{
+    display:flex; justify-content:space-between; padding:9px 0; border-top:1px dashed var(--line); font-size:14px;
+  }
+  .player-list li:first-child{border-top:none;}
+  .role-owner{color:var(--amber); font-family:'IBM Plex Mono',monospace; font-size:11px;}
+  .role-thief{color:var(--mint); font-family:'IBM Plex Mono',monospace; font-size:11px;}
+  .waiting-msg{text-align:center; color:var(--ink-dim); font-size:13px; margin-top:6px;}
+
+  /* ---- play screen ---- */
+  #screen-play{position:relative; display:flex; flex-direction:column; align-items:center;}
+  .canvas-wrap{position:relative; border:1px solid var(--line); border-radius:6px; overflow:hidden; background:#0C0E13;}
+  canvas{display:block;}
+  .hud{
+    position:absolute; top:10px; left:10px; font-family:'IBM Plex Mono',monospace; font-size:12px;
+    background:rgba(12,14,19,0.72); border:1px solid var(--line); border-radius:4px; padding:8px 12px;
+    line-height:1.7; pointer-events:none;
+  }
+  .hud .amber{color:var(--amber);}
+  .hud .mint{color:var(--mint);}
+  .weight-bar{width:110px; height:8px; background:#1E2330; border:1px solid var(--line); border-radius:2px; overflow:hidden; margin-top:4px;}
+  .weight-bar-fill{height:100%; background:var(--mint); width:0%;}
+  .controls-hint{
+    position:absolute; bottom:10px; left:10px; font-family:'IBM Plex Mono',monospace; font-size:10.5px;
+    color:var(--ink-dim); background:rgba(12,14,19,0.6); padding:5px 9px; border-radius:4px; pointer-events:none;
+  }
+  #countdown-overlay{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-family:'Oswald',sans-serif; font-size:72px; color:var(--amber); background:rgba(12,14,19,0.55);
+  }
+  #toast-area{
+    position:absolute; top:10px; left:50%; transform:translateX(-50%);
+    display:flex; flex-direction:column; align-items:center; gap:6px; pointer-events:none;
+  }
+  .toast{
+    font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:var(--ink);
+    background:rgba(12,14,19,0.85); border:1px solid var(--amber-dim); border-radius:4px;
+    padding:6px 14px; animation:fadein 0.15s ease-out;
+  }
+  @keyframes fadein{from{opacity:0; transform:translateY(-6px);} to{opacity:1; transform:translateY(0);}}
+
+  /* ---- settlement ---- */
+  #settlement-overlay{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    background:rgba(12,14,19,0.82);
+  }
+  .receipt{
+    width:320px; background:#F4F1E6; color:#1a1a1a; font-family:'IBM Plex Mono',monospace;
+    padding:26px 22px 20px; box-shadow:0 20px 50px rgba(0,0,0,0.45);
+  }
+  .receipt h4{text-align:center; font-size:14px; letter-spacing:0.14em; margin-bottom:14px;}
+  .receipt-line{display:flex; justify-content:space-between; font-size:12px; padding:5px 0; border-bottom:1px dotted #b7b2a0;}
+  .receipt-line.total{border-bottom:none; border-top:1px solid #1a1a1a; margin-top:8px; padding-top:10px; font-size:13px; font-weight:700;}
+  .receipt-actions{margin-top:18px; display:flex; gap:8px;}
+  .receipt-actions .btn{margin-top:0; font-size:11.5px; padding:9px;}
+
+  .back-link{margin-top:14px; text-align:center;}
+  .back-link a{color:var(--ink-dim); font-size:12px; font-family:'IBM Plex Mono',monospace; text-decoration:underline; cursor:pointer;}
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ============ HOME ============ -->
+  <div id="screen-home">
+    <h1 class="brand">미드나잇 <span>마트런</span></h1>
+    <div class="card">
+      <div class="field">
+        <label>닉네임</label>
+        <input id="input-nickname" maxlength="10" placeholder="닉네임 입력">
+      </div>
+      <button class="btn primary" id="btn-create">방 만들기 (마트 주인)</button>
+
+      <div class="divider">— 또는 —</div>
+
+      <div class="field">
+        <label>방 코드</label>
+        <input id="input-code" maxlength="6" placeholder="6자리 코드 입력" style="text-transform:uppercase;">
+      </div>
+      <button class="btn mint" id="btn-join">코드로 입장 (도둑)</button>
+    </div>
+  </div>
+
+  <!-- ============ LOBBY ============ -->
+  <div id="screen-lobby" class="hidden">
+    <h1 class="brand">미드나잇 <span>마트런</span></h1>
+    <div class="card">
+      <div class="room-code" id="lobby-code">------</div>
+      <div class="room-code-label">방 코드 · 시청자에게 공유하세요</div>
+      <ul class="player-list" id="lobby-players"></ul>
+      <button class="btn primary hidden" id="btn-start">게임 시작</button>
+      <p class="waiting-msg hidden" id="lobby-waiting-msg">방장이 시작하기를 기다리는 중...</p>
+      <div class="back-link"><a id="btn-leave-lobby">방 나가기</a></div>
+    </div>
+  </div>
+
+  <!-- ============ PLAY ============ -->
+  <div id="screen-play" class="hidden">
+    <h1 class="brand">미드나잇 <span>마트런</span></h1>
+    <div class="canvas-wrap" id="canvas-wrap">
+      <canvas id="game-canvas"></canvas>
+
+      <div class="hud" id="hud-owner">
+        <div class="amber">TIME <span id="hud-time-owner">--:--</span></div>
+        <div>THIEVES LEFT <span id="hud-thieves-left">-/-</span></div>
+      </div>
+
+      <div class="hud hidden" id="hud-thief">
+        <div class="mint">SPEED <span id="hud-speed">100</span>%</div>
+        <div style="margin-top:2px;">무게 <span id="hud-weight">0</span></div>
+        <div class="weight-bar"><div class="weight-bar-fill" id="hud-weight-fill"></div></div>
+        <div style="margin-top:6px;">TIME <span id="hud-time-thief">--:--</span></div>
+      </div>
+
+      <div id="toast-area"></div>
+
+      <div id="countdown-overlay" class="hidden">3</div>
+
+      <div id="settlement-overlay" class="hidden">
+        <div class="receipt">
+          <h4>MIDNIGHT MART · SETTLEMENT</h4>
+          <div id="receipt-lines"></div>
+          <div class="receipt-actions">
+            <button class="btn primary hidden" id="btn-restart" style="flex:1;">다시하기</button>
+            <button class="btn hidden" id="btn-leave-settled" style="flex:1;">나가기</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls-hint">WASD/방향키 이동 · 스페이스 체포(주인) · 도둑은 닿으면 자동 줍기</div>
+    </div>
+  </div>
+
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+import {
+  getDatabase, ref, set, get, update, remove, onValue, onDisconnect
+} from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBZwyUdFRGcmfNVoA8GVNy2zXieSJ96yAI",
+  authDomain: "midnight-mart-run-24bba.firebaseapp.com",
+  databaseURL: "https://midnight-mart-run-24bba-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "midnight-mart-run-24bba",
+  storageBucket: "midnight-mart-run-24bba.firebasestorage.app",
+  messagingSenderId: "1067679076391",
+  appId: "1:1067679076391:web:67bfb45828e1552101be02"
+};
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+// ---------------- constants (design doc numbers) ----------------
+const MAP_W = 1600, MAP_H = 1100;
+const VIEW_W = 560, VIEW_H = 400;
+const SCALE = 1.5;
+const PLAYER_RADIUS = 14, ARREST_RADIUS = 50, PICKUP_RADIUS = 22;
+const BASE_SPEED = 260; // px/s
+const ROUND_DURATION = 90; // sec, placeholder — 다음 단계에서 밸런스 조정
+const COUNTDOWN_SEC = 3;
+const SEND_INTERVAL = 100; // ms, 10Hz throttle
+const INTERP_MS = 150;
+
+const OWNER_SPAWNS = [{x:800,y:350},{x:800,y:750},{x:600,y:550},{x:1000,y:550}];
+const THIEF_SPAWNS = [{x:200,y:300},{x:200,y:550},{x:200,y:800}];
+const OBSTACLES = [
+  {x:380,y:150,w:180,h:70}, {x:380,y:515,w:180,h:70}, {x:380,y:880,w:180,h:70},
+  {x:1040,y:150,w:180,h:70}, {x:1040,y:515,w:180,h:70}, {x:1040,y:880,w:180,h:70},
+  {x:700,y:500,w:200,h:100}
+];
+const EXITS = [
+  {x:0,y:0,w:140,h:100,label:'정문',type:'main'},
+  {x:MAP_W-100,y:0,w:100,h:90,label:'비상구',type:'side'},
+  {x:0,y:MAP_H-90,w:100,h:90,label:'후문',type:'side'},
+  {x:MAP_W-140,y:MAP_H-110,w:140,h:110,label:'정문',type:'main'}
+];
+const TIER_COLOR = {S:'#F5A623', M:'#4FD1C5', L:'#E4483D'};
+
+// ---------------- session ----------------
+function getSessionId(){
+  let id = localStorage.getItem('mmr_session_id');
+  if(!id){ id = crypto.randomUUID(); localStorage.setItem('mmr_session_id', id); }
+  return id;
+}
+const mySessionId = getSessionId();
+
+// ---------------- state ----------------
+const S = {
+  code:null, role:null, isHost:false,
+  phase:'waiting', timer:{startedAt:0,durationSec:ROUND_DURATION}, hostSessionId:null,
+  players:{}, items:{}, settlement:{},
+  local:{x:800,y:550}, keys:{}, wasMoving:false, lastSendTs:0,
+  remoteRender:{}, finalizing:false, lastTs:0, localCarryWeight:0
+};
+
+function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
+function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+function fmtTime(sec){
+  sec = Math.max(0, Math.ceil(sec));
+  const m = Math.floor(sec/60), s = sec%60;
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+function speedFactor(weight){ return Math.max(70, 100 - 6*weight)/100; }
+
+// ---------------- screens ----------------
+function showScreen(name){
+  document.getElementById('screen-home').classList.toggle('hidden', name!=='home');
+  document.getElementById('screen-lobby').classList.toggle('hidden', name!=='lobby');
+  document.getElementById('screen-play').classList.toggle('hidden', name!=='play');
+}
+
+function showToast(text){
+  const area = document.getElementById('toast-area');
+  const el = document.createElement('div');
+  el.className = 'toast'; el.textContent = text;
+  area.appendChild(el);
+  setTimeout(()=>el.remove(), 2500);
+}
+
+// ---------------- room create / join ----------------
+function genCode(){
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let out = '';
+  for(let i=0;i<6;i++) out += chars[Math.floor(Math.random()*chars.length)];
+  return out;
+}
+
+async function createRoom(){
+  const nickname = document.getElementById('input-nickname').value.trim() || '방장';
+  let code;
+  for(let i=0;i<5;i++){
+    code = genCode();
+    const snap = await get(ref(db, `rooms/${code}`));
+    if(!snap.exists()) break;
+  }
+  await set(ref(db, `rooms/${code}`), {
+    code, hostSessionId: mySessionId, phase:'waiting',
+    timer:{startedAt:0, durationSec:ROUND_DURATION}, ownerSpawnIndex:0
+  });
+  await set(ref(db, `rooms/${code}/players/${mySessionId}`), {
+    nickname, role:'owner', x:OWNER_SPAWNS[0].x, y:OWNER_SPAWNS[0].y,
+    carryWeight:0, carriedItems:null, status:'active', connected:true
+  });
+  onDisconnect(ref(db, `rooms/${code}`)).remove();
+  enterRoom(code, 'owner', true);
+}
+
+async function joinRoom(){
+  const code = document.getElementById('input-code').value.trim().toUpperCase();
+  const nickname = document.getElementById('input-nickname').value.trim() || ('도둑'+randInt(1,99));
+  if(!code){ alert('방 코드를 입력하세요.'); return; }
+  const snap = await get(ref(db, `rooms/${code}`));
+  if(!snap.exists()){ alert('존재하지 않는 방입니다.'); return; }
+  const room = snap.val();
+  if(room.phase !== 'waiting'){ alert('이미 라운드가 진행 중입니다. 잠시 후 다시 시도하세요.'); return; }
+  const playersSnap = await get(ref(db, `rooms/${code}/players`));
+  const players = playersSnap.val() || {};
+  const thiefCount = Object.values(players).filter(p=>p.role==='thief').length;
+  if(thiefCount >= 3){ alert('정원이 가득 찼습니다 (최대 3인).'); return; }
+
+  await set(ref(db, `rooms/${code}/players/${mySessionId}`), {
+    nickname, role:'thief', x:0, y:0,
+    carryWeight:0, carriedItems:null, status:'active', connected:true
+  });
+  onDisconnect(ref(db, `rooms/${code}/players/${mySessionId}`)).remove();
+  enterRoom(code, 'thief', false);
+}
+
+let roomListenersAttached = false;
+function enterRoom(code, role, isHost){
+  S.code = code; S.role = role; S.isHost = isHost;
+  document.getElementById('hud-owner').classList.toggle('hidden', role!=='owner');
+  document.getElementById('hud-thief').classList.toggle('hidden', role!=='thief');
+  if(!roomListenersAttached){ attachRoomListeners(); roomListenersAttached = true; }
+  showScreen('lobby');
+}
+
+function attachRoomListeners(){
+  onValue(ref(db, `rooms/${S.code}`), (snap)=>{
+    const data = snap.val();
+    if(!data){ window.location.reload(); return; }
+    const prevPhase = S.phase;
+    S.phase = data.phase; S.timer = data.timer || S.timer; S.hostSessionId = data.hostSessionId;
+    document.getElementById('lobby-code').textContent = S.code;
+
+    if(data.phase === 'waiting'){
+      showScreen('lobby'); updateLobbyUI();
+    } else {
+      showScreen('play');
+      if(data.phase === 'countdown' && prevPhase !== 'countdown'){
+        S.finalizing = false; S.wasMoving = false;
+        const me = S.players[mySessionId];
+        if(me){ S.local.x = me.x; S.local.y = me.y; S.localCarryWeight = 0; }
+        document.getElementById('countdown-overlay').classList.remove('hidden');
+        document.getElementById('settlement-overlay').classList.add('hidden');
+      }
+      if(data.phase === 'playing'){
+        document.getElementById('countdown-overlay').classList.add('hidden');
+      }
+      if(data.phase === 'settled'){
+        renderSettlement();
+      }
+    }
+  });
+
+  onValue(ref(db, `rooms/${S.code}/players`), (snap)=>{
+    S.players = snap.val() || {};
+    if(S.phase === 'waiting') updateLobbyUI();
+  });
+
+  onValue(ref(db, `rooms/${S.code}/items`), (snap)=>{
+    S.items = snap.val() || {};
+  });
+
+  onValue(ref(db, `rooms/${S.code}/settlement`), (snap)=>{
+    S.settlement = snap.val() || {};
+    if(S.phase === 'settled') renderSettlement();
+  });
+}
+
+function updateLobbyUI(){
+  const list = document.getElementById('lobby-players');
+  list.innerHTML = '';
+  Object.values(S.players).forEach(p=>{
+    const li = document.createElement('li');
+    li.innerHTML = `<span>${p.nickname}</span><span class="${p.role==='owner'?'role-owner':'role-thief'}">${p.role==='owner'?'주인':'도둑'}</span>`;
+    list.appendChild(li);
+  });
+  document.getElementById('btn-start').classList.toggle('hidden', !S.isHost);
+  document.getElementById('lobby-waiting-msg').classList.toggle('hidden', S.isHost);
+}
+
+// ---------------- host: start / restart round ----------------
+function generateItems(){
+  const items = {};
+  let idx = 0;
+  const specs = [
+    {tier:'S', count:12, valMin:10, valMax:20, wMin:1, wMax:1},
+    {tier:'M', count:6, valMin:40, valMax:60, wMin:2, wMax:3},
+    {tier:'L', count:2, valMin:100, valMax:150, wMin:4, wMax:5}
+  ];
+  specs.forEach(spec=>{
+    for(let i=0;i<spec.count;i++){
+      const pos = randomFreePosition();
+      items['i'+(idx++)] = {
+        x:pos.x, y:pos.y, tier:spec.tier,
+        value:randInt(spec.valMin, spec.valMax), weight:randInt(spec.wMin, spec.wMax),
+        state:'onFloor', carriedBy:null
+      };
+    }
+  });
+  return items;
+}
+function randomFreePosition(){
+  const rects = [...OBSTACLES, ...EXITS];
+  for(let i=0;i<40;i++){
+    const x = randInt(50, MAP_W-50), y = randInt(50, MAP_H-50);
+    if(!rects.some(r => x>r.x-20 && x<r.x+r.w+20 && y>r.y-20 && y<r.y+r.h+20)) return {x,y};
+  }
+  return {x:800,y:550};
+}
+
+async function hostStartRound(){
+  const spawnIdx = Math.floor(Math.random()*OWNER_SPAWNS.length);
+  const items = generateItems();
+  const thiefIds = Object.keys(S.players).filter(id=>S.players[id].role==='thief');
+
+  const updates = {};
+  updates[`rooms/${S.code}/phase`] = 'countdown';
+  updates[`rooms/${S.code}/ownerSpawnIndex`] = spawnIdx;
+  updates[`rooms/${S.code}/timer`] = {startedAt: Date.now(), durationSec: ROUND_DURATION};
+  updates[`rooms/${S.code}/items`] = items;
+  updates[`rooms/${S.code}/settlement`] = {};
+
+  Object.keys(S.players).forEach(id=>{
+    const p = S.players[id];
+    const spawn = p.role === 'owner' ? OWNER_SPAWNS[spawnIdx] : THIEF_SPAWNS[thiefIds.indexOf(id) % THIEF_SPAWNS.length];
+    updates[`rooms/${S.code}/players/${id}/x`] = spawn.x;
+    updates[`rooms/${S.code}/players/${id}/y`] = spawn.y;
+    updates[`rooms/${S.code}/players/${id}/carryWeight`] = 0;
+    updates[`rooms/${S.code}/players/${id}/carriedItems`] = null;
+    updates[`rooms/${S.code}/players/${id}/status`] = 'active';
+  });
+
+  await update(ref(db), updates);
+  setTimeout(async ()=>{
+    await update(ref(db), {
+      [`rooms/${S.code}/phase`]: 'playing',
+      [`rooms/${S.code}/timer`]: {startedAt: Date.now(), durationSec: ROUND_DURATION}
+    });
+  }, COUNTDOWN_SEC * 1000);
+}
+
+// ---------------- input ----------------
+window.addEventListener('keydown', (e)=>{
+  const moveKeys = ['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];
+  if(moveKeys.includes(e.code)){ S.keys[e.code] = true; e.preventDefault(); }
+  if(e.code === 'Space'){
+    e.preventDefault();
+    if(!e.repeat && S.phase === 'playing' && S.role === 'owner') arrestAttempt();
+  }
+});
+window.addEventListener('keyup', (e)=>{ S.keys[e.code] = false; });
+
+function computeInputDir(){
+  let dx=0, dy=0;
+  if(S.keys['KeyW']||S.keys['ArrowUp']) dy -= 1;
+  if(S.keys['KeyS']||S.keys['ArrowDown']) dy += 1;
+  if(S.keys['KeyA']||S.keys['ArrowLeft']) dx -= 1;
+  if(S.keys['KeyD']||S.keys['ArrowRight']) dx += 1;
+  if(dx!==0 && dy!==0){ dx*=Math.SQRT1_2; dy*=Math.SQRT1_2; }
+  return {x:dx, y:dy};
+}
+
+function circleRectCollide(cx,cy,r,rect){
+  const cxr = clamp(cx, rect.x, rect.x+rect.w);
+  const cyr = clamp(cy, rect.y, rect.y+rect.h);
+  const dx = cx-cxr, dy = cy-cyr;
+  return dx*dx+dy*dy < r*r;
+}
+function moveWithCollision(dx,dy){
+  const r = PLAYER_RADIUS;
+  let nx = S.local.x+dx;
+  if(nx-r>=0 && nx+r<=MAP_W && !OBSTACLES.some(o=>circleRectCollide(nx,S.local.y,r,o))) S.local.x = nx;
+  let ny = S.local.y+dy;
+  if(ny-r>=0 && ny+r<=MAP_H && !OBSTACLES.some(o=>circleRectCollide(S.local.x,ny,r,o))) S.local.y = ny;
+}
+
+function updateLocalMovement(dt){
+  const dir = computeInputDir();
+  const isMoving = dir.x!==0 || dir.y!==0;
+  const speed = S.role==='owner' ? BASE_SPEED : BASE_SPEED*speedFactor(S.localCarryWeight);
+  if(isMoving) moveWithCollision(dir.x*speed*dt, dir.y*speed*dt);
+
+  if(S.role === 'thief'){
+    const me = S.players[mySessionId];
+    if(me && me.status === 'active'){
+      const inExit = EXITS.some(ex => S.local.x>ex.x && S.local.x<ex.x+ex.w && S.local.y>ex.y && S.local.y<ex.y+ex.h);
+      if(inExit){
+        update(ref(db, `rooms/${S.code}/players/${mySessionId}`), {
+          status:'escaped', x:Math.round(S.local.x), y:Math.round(S.local.y)
+        });
+      }
+    }
+  }
+
+  const now = performance.now();
+  if(isMoving){
+    if(now - S.lastSendTs >= SEND_INTERVAL){
+      update(ref(db, `rooms/${S.code}/players/${mySessionId}`), {x:Math.round(S.local.x), y:Math.round(S.local.y)});
+      S.lastSendTs = now;
+    }
+  } else if(S.wasMoving){
+    update(ref(db, `rooms/${S.code}/players/${mySessionId}`), {x:Math.round(S.local.x), y:Math.round(S.local.y)});
+  }
+  S.wasMoving = isMoving;
+}
+
+function checkPickup(){
+  if(S.role !== 'thief') return;
+  const me = S.players[mySessionId];
+  if(!me || me.status !== 'active') return;
+  Object.entries(S.items).forEach(([id,item])=>{
+    if(item.state !== 'onFloor') return;
+    const dx = item.x - S.local.x, dy = item.y - S.local.y;
+    if(dx*dx+dy*dy < PICKUP_RADIUS*PICKUP_RADIUS){
+      S.localCarryWeight += item.weight;
+      update(ref(db, `rooms/${S.code}/items/${id}`), {state:'carried', carriedBy:mySessionId});
+      update(ref(db, `rooms/${S.code}/players/${mySessionId}`), {
+        [`carriedItems/${id}`]: true, carryWeight: S.localCarryWeight
+      });
+    }
+  });
+}
+
+function arrestAttempt(){
+  const me = S.players[mySessionId];
+  if(!me) return;
+  let target = null, targetId = null, bestDist = Infinity;
+  Object.entries(S.players).forEach(([id,p])=>{
+    if(p.role !== 'thief' || p.status !== 'active') return;
+    const dx = p.x - S.local.x, dy = p.y - S.local.y;
+    const d = dx*dx+dy*dy;
+    if(d < ARREST_RADIUS*ARREST_RADIUS && d < bestDist){ bestDist=d; target=p; targetId=id; }
+  });
+  if(!target){ return; }
+  if(target.carryWeight > 0){
+    const updates = {};
+    updates[`rooms/${S.code}/players/${targetId}/status`] = 'arrested';
+    updates[`rooms/${S.code}/players/${targetId}/carryWeight`] = 0;
+    updates[`rooms/${S.code}/players/${targetId}/carriedItems`] = null;
+    Object.keys(target.carriedItems || {}).forEach(itemId=>{
+      updates[`rooms/${S.code}/items/${itemId}/state`] = 'returned';
+      updates[`rooms/${S.code}/items/${itemId}/carriedBy`] = null;
+    });
+    update(ref(db), updates);
+    showToast(`${target.nickname} 체포됨`);
+  } else {
+    showToast(`${target.nickname} 몸수색... 빈손! (사과)`);
+  }
+}
+
+async function checkRoundEndAndFinalize(){
+  if(!S.isHost || S.finalizing) return;
+  const thieves = Object.entries(S.players).filter(([,p])=>p.role==='thief');
+  if(thieves.length === 0) return;
+  const elapsed = (Date.now() - S.timer.startedAt)/1000;
+  const allDone = thieves.every(([,p])=>p.status !== 'active');
+  const timeUp = elapsed >= S.timer.durationSec;
+  if(!allDone && !timeUp) return;
+
+  S.finalizing = true;
+  const updates = {};
+  thieves.forEach(([id,p])=>{
+    let finalStatus = p.status;
+    if(p.status === 'active'){
+      finalStatus = 'timeout';
+      updates[`rooms/${S.code}/players/${id}/status`] = 'timeout';
+      updates[`rooms/${S.code}/players/${id}/carryWeight`] = 0;
+      updates[`rooms/${S.code}/players/${id}/carriedItems`] = null;
+      Object.keys(p.carriedItems || {}).forEach(itemId=>{
+        updates[`rooms/${S.code}/items/${itemId}/state`] = 'returned';
+        updates[`rooms/${S.code}/items/${itemId}/carriedBy`] = null;
+      });
+    }
+    let score = 0;
+    if(finalStatus === 'escaped'){
+      score = Object.keys(p.carriedItems || {}).reduce((sum,itemId)=>{
+        const item = S.items[itemId];
+        return sum + (item ? item.value : 0);
+      }, 0);
+    }
+    updates[`rooms/${S.code}/settlement/${id}`] = {result:finalStatus, score};
+  });
+  updates[`rooms/${S.code}/phase`] = 'settled';
+  await update(ref(db), updates);
+}
+
+// ---------------- settlement UI ----------------
+function renderSettlement(){
+  const lines = document.getElementById('receipt-lines');
+  const rows = Object.entries(S.settlement).map(([id,r])=>({
+    nickname: (S.players[id]||{}).nickname || '???',
+    result: r.result, score: r.score
+  })).sort((a,b)=>b.score-a.score);
+
+  const resultLabel = {escaped:'탈출 성공', arrested:'체포됨', timeout:'미탈출'};
+  lines.innerHTML = rows.map(r=>
+    `<div class="receipt-line"><span>${r.nickname} — ${resultLabel[r.result]||r.result}</span><span>+${r.score}</span></div>`
+  ).join('') + (rows.length ? `<div class="receipt-line total"><span>1위</span><span>${rows[0].nickname}</span></div>` : '');
+
+  document.getElementById('settlement-overlay').classList.remove('hidden');
+  document.getElementById('btn-restart').classList.toggle('hidden', !S.isHost);
+  document.getElementById('btn-leave-settled').classList.toggle('hidden', !S.isHost);
+}
+
+// ---------------- render ----------------
+const canvas = document.getElementById('game-canvas');
+canvas.width = VIEW_W*SCALE; canvas.height = VIEW_H*SCALE;
+const ctx = canvas.getContext('2d');
+
+function updateRemoteInterpolation(){
+  const now = performance.now();
+  Object.entries(S.players).forEach(([id,p])=>{
+    if(id === mySessionId) return;
+    let r = S.remoteRender[id];
+    if(!r){
+      r = {renderX:p.x, renderY:p.y, prevX:p.x, prevY:p.y, targetX:p.x, targetY:p.y, t0:now};
+      S.remoteRender[id] = r;
+    }
+    if(p.x !== r.targetX || p.y !== r.targetY){
+      r.prevX = r.renderX; r.prevY = r.renderY;
+      r.targetX = p.x; r.targetY = p.y; r.t0 = now;
+    }
+    const t = clamp((now-r.t0)/INTERP_MS, 0, 1);
+    r.renderX = r.prevX + (r.targetX-r.prevX)*t;
+    r.renderY = r.prevY + (r.targetY-r.prevY)*t;
+  });
+}
+
+function render(){
+  ctx.save();
+  ctx.scale(SCALE, SCALE);
+  ctx.clearRect(0,0,VIEW_W,VIEW_H);
+  ctx.fillStyle = '#0C0E13';
+  ctx.fillRect(0,0,VIEW_W,VIEW_H);
+
+  if(S.phase === 'waiting'){ ctx.restore(); return; }
+
+  const camX = clamp(S.local.x - VIEW_W/2, 0, MAP_W-VIEW_W);
+  const camY = clamp(S.local.y - VIEW_H/2, 0, MAP_H-VIEW_H);
+
+  EXITS.forEach(ex=>{
+    ctx.fillStyle = ex.type==='main' ? 'rgba(245,166,35,0.16)' : 'rgba(79,209,197,0.14)';
+    ctx.strokeStyle = ex.type==='main' ? '#7A5A1E' : 'rgba(79,209,197,0.4)';
+    ctx.fillRect(ex.x-camX, ex.y-camY, ex.w, ex.h);
+    ctx.strokeRect(ex.x-camX, ex.y-camY, ex.w, ex.h);
+    ctx.fillStyle = ex.type==='main' ? '#F5A623' : '#4FD1C5';
+    ctx.font = '10px IBM Plex Mono, monospace';
+    ctx.fillText(ex.label, ex.x-camX+6, ex.y-camY+16);
+  });
+
+  ctx.fillStyle = '#1E2330'; ctx.strokeStyle = '#2A2F3B';
+  OBSTACLES.forEach(o=>{ ctx.fillRect(o.x-camX,o.y-camY,o.w,o.h); ctx.strokeRect(o.x-camX,o.y-camY,o.w,o.h); });
+
+  Object.values(S.items).forEach(item=>{
+    if(item.state !== 'onFloor') return;
+    const x = item.x-camX, y = item.y-camY;
+    if(x<-10||x>VIEW_W+10||y<-10||y>VIEW_H+10) return;
+    ctx.fillStyle = TIER_COLOR[item.tier];
+    const r = item.tier==='L'?7:item.tier==='M'?5.5:4;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  });
+
+  Object.entries(S.players).forEach(([id,p])=>{
+    if(p.role==='thief' && p.status!=='active') return;
+    let x,y;
+    if(id===mySessionId){ x=S.local.x; y=S.local.y; }
+    else{ const r=S.remoteRender[id]; if(!r) return; x=r.renderX; y=r.renderY; }
+    const sx=x-camX, sy=y-camY;
+    if(sx<-20||sx>VIEW_W+20||sy<-20||sy>VIEW_H+20) return;
+    ctx.fillStyle = p.role==='owner' ? '#F5A623' : '#4FD1C5';
+    ctx.beginPath(); ctx.arc(sx,sy,PLAYER_RADIUS,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#0C0E13'; ctx.font='10px Noto Sans KR'; ctx.textAlign='center';
+    ctx.fillText(p.nickname, sx, sy-PLAYER_RADIUS-6);
+    ctx.textAlign='left';
+  });
+
+  ctx.restore();
+}
+
+function updateHUD(){
+  const elapsed = S.timer.startedAt ? (Date.now()-S.timer.startedAt)/1000 : 0;
+  const remain = S.phase==='playing' ? Math.max(0, S.timer.durationSec-elapsed) : S.timer.durationSec;
+  document.getElementById('hud-time-owner').textContent = fmtTime(remain);
+  document.getElementById('hud-time-thief').textContent = fmtTime(remain);
+
+  const thieves = Object.values(S.players).filter(p=>p.role==='thief');
+  const left = thieves.filter(p=>p.status==='active').length;
+  document.getElementById('hud-thieves-left').textContent = `${left}/${thieves.length}`;
+
+  if(S.role==='thief'){
+    const pct = Math.round(speedFactor(S.localCarryWeight)*100);
+    document.getElementById('hud-speed').textContent = pct;
+    document.getElementById('hud-weight').textContent = S.localCarryWeight;
+    document.getElementById('hud-weight-fill').style.width = Math.min(100, S.localCarryWeight*8) + '%';
+  }
+
+  if(S.phase==='countdown'){
+    const remain2 = Math.max(0, COUNTDOWN_SEC-elapsed);
+    const el = document.getElementById('countdown-overlay');
+    el.textContent = remain2>0.05 ? String(Math.ceil(remain2)) : 'GO!';
+  }
+}
+
+function gameLoop(ts){
+  if(!S.lastTs) S.lastTs = ts;
+  const dt = Math.min(0.05, (ts-S.lastTs)/1000);
+  S.lastTs = ts;
+
+  if(S.phase === 'playing'){
+    updateLocalMovement(dt);
+    checkPickup();
+    checkRoundEndAndFinalize();
+  }
+  updateRemoteInterpolation();
+  if(S.phase !== 'waiting'){ render(); updateHUD(); }
+  requestAnimationFrame(gameLoop);
+}
+requestAnimationFrame(gameLoop);
+
+// ---------------- leave / cleanup ----------------
+async function leaveRoom(){
+  if(S.isHost){ await remove(ref(db, `rooms/${S.code}`)); }
+  else{ await remove(ref(db, `rooms/${S.code}/players/${mySessionId}`)); }
+  window.location.reload();
+}
+
+// ---------------- wire up buttons ----------------
+document.getElementById('btn-create').addEventListener('click', createRoom);
+document.getElementById('btn-join').addEventListener('click', joinRoom);
+document.getElementById('btn-start').addEventListener('click', hostStartRound);
+document.getElementById('btn-restart').addEventListener('click', hostStartRound);
+document.getElementById('btn-leave-lobby').addEventListener('click', leaveRoom);
+document.getElementById('btn-leave-settled').addEventListener('click', leaveRoom);
+</script>
+</body>
+</html>
