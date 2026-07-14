@@ -41,6 +41,26 @@
   #topnav a.topnav-link .dot{
     width:7px; height:7px; border-radius:50%; background:var(--alarm); flex:none;
   }
+  .topnav-right{display:flex; align-items:center; gap:10px;}
+  .sound-btn-wrap{position:relative;}
+  .topnav-icon-btn{
+    width:34px; height:34px; border-radius:4px; border:1px solid var(--line);
+    background:var(--bg); color:var(--ink); font-size:15px; cursor:pointer;
+  }
+  .topnav-icon-btn:hover{border-color:var(--amber-dim);}
+  .topnav-icon-btn.muted{opacity:0.45;}
+  #sound-panel{
+    position:absolute; top:calc(100% + 8px); right:0; width:260px;
+    background:var(--bg-raised); border:1px solid var(--line); border-radius:6px;
+    padding:14px 16px; box-shadow:0 12px 32px rgba(0,0,0,0.45); z-index:20;
+  }
+  #sound-panel .sp-title{font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--ink-dim); letter-spacing:0.06em; margin-bottom:10px;}
+  .sp-row{margin-bottom:12px;}
+  .sp-row:last-child{margin-bottom:0;}
+  .sp-row-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:5px;}
+  .sp-row-head label{display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--ink); cursor:pointer;}
+  .sp-row input[type="range"]{width:100%; accent-color:var(--amber);}
+  .sp-row input[type="checkbox"]{accent-color:var(--amber); cursor:pointer;}
   .page-content{
     flex:1; display:flex; align-items:center; justify-content:center; padding:24px;
   }
@@ -155,9 +175,15 @@
 
 <nav id="topnav">
   <span class="topnav-brand">미드나잇 <span>마트런</span></span>
-  <a class="topnav-link" href="https://www.sooplive.com/station/skftodwocks2" target="_blank" rel="noopener noreferrer">
-    <span class="dot"></span>개발자 방송국 바로가기
-  </a>
+  <div class="topnav-right">
+    <div class="sound-btn-wrap">
+      <button class="topnav-icon-btn" id="btn-sound-toggle" title="사운드 설정" type="button">🔊</button>
+      <div id="sound-panel" class="hidden"></div>
+    </div>
+    <a class="topnav-link" href="https://www.sooplive.com/station/skftodwocks2" target="_blank" rel="noopener noreferrer">
+      <span class="dot"></span>개발자 방송국 바로가기
+    </a>
+  </div>
 </nav>
 
 <div class="page-content">
@@ -300,13 +326,70 @@ function getSessionId(){
 }
 const mySessionId = getSessionId();
 
+// ---------------- sound (Web Audio, no external asset files) ----------------
+const SOUND_CATEGORIES = {
+  pickup: {label:'줍기 / 내려놓기'},
+  action: {label:'체포 / 사과'},
+  escape: {label:'탈출'},
+  ui: {label:'알림 / 버튼'}
+};
+function loadSoundSettings(){
+  const defaults = {};
+  Object.keys(SOUND_CATEGORIES).forEach(k => defaults[k] = {on:true, vol:0.7});
+  try{
+    const saved = JSON.parse(localStorage.getItem('mmr_sound_settings') || 'null');
+    if(saved){ Object.keys(defaults).forEach(k => { if(saved[k]) defaults[k] = {...defaults[k], ...saved[k]}; }); }
+  }catch(e){}
+  return defaults;
+}
+const soundSettings = loadSoundSettings();
+function saveSoundSettings(){ localStorage.setItem('mmr_sound_settings', JSON.stringify(soundSettings)); }
+
+let audioCtx = null;
+function ensureAudio(){
+  if(!audioCtx){
+    try{ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return; }
+  }
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+}
+['pointerdown','keydown'].forEach(evt => window.addEventListener(evt, ensureAudio, {once:false}));
+
+function catVolume(category){
+  const c = soundSettings[category];
+  return (c && c.on) ? c.vol : 0;
+}
+function playTone(freq, dur, type, category, delay=0){
+  if(!audioCtx) return;
+  const vol = catVolume(category);
+  if(vol <= 0) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type; osc.frequency.value = freq;
+  const t0 = audioCtx.currentTime + delay;
+  gain.gain.setValueAtTime(0, t0);
+  gain.gain.linearRampToValueAtTime(vol*0.4, t0+0.012);
+  gain.gain.exponentialRampToValueAtTime(0.001, t0+dur);
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.start(t0); osc.stop(t0+dur+0.02);
+}
+function sfxPickup(){ playTone(880,0.09,'triangle','pickup'); }
+function sfxDrop(){ playTone(160,0.12,'sine','pickup'); }
+function sfxArrestSuccess(){ playTone(420,0.14,'sawtooth','action'); playTone(220,0.22,'sawtooth','action',0.1); }
+function sfxWrongArrest(){ playTone(180,0.16,'square','action'); playTone(150,0.2,'square','action',0.12); }
+function sfxEscape(){ [523,659,784].forEach((f,i)=>playTone(f,0.16,'triangle','escape',i*0.09)); }
+function sfxCountdownTick(){ playTone(600,0.09,'square','ui'); }
+function sfxCountdownGo(){ playTone(920,0.28,'square','ui'); }
+function sfxSettlement(){ [523,659,784,1047].forEach((f,i)=>playTone(f,0.2,'triangle','ui',i*0.11)); }
+function sfxClick(){ playTone(1000,0.045,'square','ui'); }
+
 // ---------------- state ----------------
 const S = {
   code:null, role:null, isHost:false,
   phase:'waiting', timer:{startedAt:0,durationSec:ROUND_DURATION}, hostSessionId:null,
   players:{}, items:{}, settlement:{},
   local:{x:800,y:550}, keys:{}, wasMoving:false, lastSendTs:0,
-  remoteRender:{}, finalizing:false, lastTs:0, localCarryWeight:0, recentlyDropped:{}
+  remoteRender:{}, finalizing:false, lastTs:0, localCarryWeight:0, recentlyDropped:{},
+  lastCountdownShown:null, settlementSoundPlayed:false
 };
 
 function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
@@ -410,6 +493,7 @@ function attachRoomListeners(){
       showScreen('play');
       if(data.phase === 'countdown' && prevPhase !== 'countdown'){
         S.finalizing = false; S.wasMoving = false;
+        S.lastCountdownShown = null; S.settlementSoundPlayed = false;
         const me = S.players[mySessionId];
         if(me){ S.local.x = me.x; S.local.y = me.y; S.localCarryWeight = 0; }
         document.getElementById('countdown-overlay').classList.remove('hidden');
@@ -420,6 +504,7 @@ function attachRoomListeners(){
       }
       if(data.phase === 'settled'){
         renderSettlement();
+        if(!S.settlementSoundPlayed){ S.settlementSoundPlayed = true; sfxSettlement(); }
       }
     }
   });
@@ -564,6 +649,7 @@ function updateLocalMovement(dt){
         update(ref(db, `rooms/${S.code}/players/${mySessionId}`), {
           status:'escaped', x:Math.round(S.local.x), y:Math.round(S.local.y)
         });
+        sfxEscape();
       }
     }
   }
@@ -596,6 +682,7 @@ function checkPickup(){
       update(ref(db, `rooms/${S.code}/players/${mySessionId}`), {
         [`carriedItems/${id}`]: true, carryWeight: S.localCarryWeight
       });
+      sfxPickup();
     }
   });
 }
@@ -621,6 +708,7 @@ function dropItems(){
 
   S.localCarryWeight = 0;
   showToast('물건을 내려놓았다');
+  sfxDrop();
 }
 
 function arrestAttempt(){
@@ -646,9 +734,11 @@ function arrestAttempt(){
     });
     update(ref(db), updates);
     showToast(`${target.nickname} 체포됨`);
+    sfxArrestSuccess();
   } else {
     update(ref(db, `rooms/${S.code}/players/${mySessionId}`), {frozenUntil: Date.now()+APOLOGY_MS});
     showToast(`${target.nickname}은(는) 빈손이었다... 오인 체포! 사과하는 중 (5초)`);
+    sfxWrongArrest();
   }
 }
 
@@ -873,7 +963,12 @@ function updateHUD(){
   if(S.phase==='countdown'){
     const remain2 = Math.max(0, COUNTDOWN_SEC-elapsed);
     const el = document.getElementById('countdown-overlay');
-    el.textContent = remain2>0.05 ? String(Math.ceil(remain2)) : 'GO!';
+    const shown = remain2>0.05 ? String(Math.ceil(remain2)) : 'GO!';
+    el.textContent = shown;
+    if(shown !== S.lastCountdownShown){
+      S.lastCountdownShown = shown;
+      if(shown === 'GO!') sfxCountdownGo(); else sfxCountdownTick();
+    }
   }
 }
 
@@ -904,7 +999,56 @@ async function leaveRoom(){
   window.location.reload();
 }
 
+// ---------------- sound settings panel ----------------
+function buildSoundPanel(){
+  const panel = document.getElementById('sound-panel');
+  panel.innerHTML = '<div class="sp-title">사운드 설정</div>' + Object.entries(SOUND_CATEGORIES).map(([key,cat])=>`
+    <div class="sp-row" data-cat="${key}">
+      <div class="sp-row-head">
+        <label><input type="checkbox" class="sp-on" ${soundSettings[key].on?'checked':''}>${cat.label}</label>
+        <span class="mono sp-pct" style="font-size:11px; color:var(--ink-dim);">${Math.round(soundSettings[key].vol*100)}%</span>
+      </div>
+      <input type="range" class="sp-vol" min="0" max="100" value="${Math.round(soundSettings[key].vol*100)}">
+    </div>
+  `).join('');
+
+  panel.querySelectorAll('.sp-row').forEach(row=>{
+    const key = row.dataset.cat;
+    const onCk = row.querySelector('.sp-on');
+    const volInput = row.querySelector('.sp-vol');
+    const pct = row.querySelector('.sp-pct');
+    onCk.addEventListener('change', ()=>{
+      soundSettings[key].on = onCk.checked;
+      saveSoundSettings();
+      updateSoundBtnIcon();
+    });
+    volInput.addEventListener('input', ()=>{
+      soundSettings[key].vol = volInput.value/100;
+      pct.textContent = volInput.value+'%';
+      saveSoundSettings();
+    });
+  });
+}
+function updateSoundBtnIcon(){
+  const anyOn = Object.values(soundSettings).some(c=>c.on);
+  const btn = document.getElementById('btn-sound-toggle');
+  btn.textContent = anyOn ? '🔊' : '🔇';
+  btn.classList.toggle('muted', !anyOn);
+}
+document.getElementById('btn-sound-toggle').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  document.getElementById('sound-panel').classList.toggle('hidden');
+});
+document.addEventListener('click', (e)=>{
+  if(!document.querySelector('.sound-btn-wrap').contains(e.target)){
+    document.getElementById('sound-panel').classList.add('hidden');
+  }
+});
+buildSoundPanel();
+updateSoundBtnIcon();
+
 // ---------------- wire up buttons ----------------
+document.querySelectorAll('.btn').forEach(btn => btn.addEventListener('click', sfxClick));
 document.getElementById('btn-create').addEventListener('click', createRoom);
 document.getElementById('btn-join').addEventListener('click', joinRoom);
 document.getElementById('btn-start').addEventListener('click', hostStartRound);
