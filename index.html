@@ -217,7 +217,7 @@
 
       <div class="howto">
         <p class="howto-title">게임 방법</p>
-        <p><b class="amber-text">주인</b>(방장) — 도둑에게 다가가 <b>스페이스바</b>로 체포한다. 손에 물건이 없으면 오인 체포! 주인이 5초간 사과하며 그 자리에 묶인다.</p>
+        <p><b class="amber-text">주인</b>(방장) — 도둑에게 다가가 <b>스페이스바</b>로 체포한다. 손에 물건이 없으면 오인 체포! 주인이 5초간 사과하며 그 자리에 묶인다. <b>시프트</b>로 순간 대시(쿨다운 10초)를 쓸 수 있다.</p>
         <p><b class="mint-text">도둑</b>(시청자, 최대 3인) — 물건에 닿으면 자동으로 줍고, <b>출구</b>로 나가면 탈출 성공. 위험하면 <b>스페이스바</b>로 소지품을 내려놓고 몸을 가볍게 할 수 있다. 많이 들수록 느려지니 욕심과 안전 사이에서 선택하자.</p>
         <p>이동은 <b>WASD</b> 또는 <b>방향키</b>. 전원 탈출/체포되거나 제한시간이 끝나면 라운드가 종료되고 정산된다.</p>
       </div>
@@ -236,6 +236,7 @@
       <div class="hud" id="hud-owner">
         <div class="amber">TIME <span id="hud-time-owner">--:--</span></div>
         <div>THIEVES LEFT <span id="hud-thieves-left">-/-</span></div>
+        <div style="margin-top:6px;">DASH(Shift) <span id="hud-dash-status" class="mint">준비됨</span></div>
         <div class="hidden" id="hud-owner-frozen" style="margin-top:6px; color:var(--alarm);">오인 체포... 사과하는 중 <span id="hud-owner-frozen-sec">5</span>초</div>
       </div>
 
@@ -261,7 +262,7 @@
         </div>
       </div>
 
-      <div class="controls-hint">WASD/방향키 이동 · 스페이스 체포(주인) / 소지품 내려놓기(도둑) · 도둑은 닿으면 자동 줍기</div>
+      <div class="controls-hint">WASD/방향키 이동 · 스페이스 체포(주인) / 소지품 내려놓기(도둑) · 시프트 대시(주인, 10초 쿨다운) · 도둑은 닿으면 자동 줍기</div>
     </div>
   </div>
 
@@ -296,6 +297,8 @@ const ROUND_DURATION = 90; // sec, placeholder — 다음 단계에서 밸런스
 const COUNTDOWN_SEC = 3;
 const APOLOGY_MS = 5000;
 const DROP_PICKUP_COOLDOWN_MS = 3000; // 본인이 내려놓은 물건은 3초 후에 재습득 가능
+const DASH_DISTANCE = 160; // px, 주인 전용 특수스킬
+const DASH_COOLDOWN_MS = 10000;
 const SEND_INTERVAL = 100; // ms, 10Hz throttle
 const INTERP_MS = 150;
 
@@ -382,6 +385,7 @@ function sfxCountdownTick(){ playTone(600,0.09,'square','ui'); }
 function sfxCountdownGo(){ playTone(920,0.28,'square','ui'); }
 function sfxSettlement(){ [523,659,784,1047].forEach((f,i)=>playTone(f,0.2,'triangle','ui',i*0.11)); }
 function sfxClick(){ playTone(1000,0.045,'square','ui'); }
+function sfxDash(){ playTone(700,0.05,'sawtooth','action'); playTone(1000,0.07,'sawtooth','action',0.04); }
 
 // ---------------- state ----------------
 const S = {
@@ -390,7 +394,8 @@ const S = {
   players:{}, items:{}, settlement:{},
   local:{x:800,y:550}, keys:{}, wasMoving:false, lastSendTs:0,
   remoteRender:{}, finalizing:false, lastTs:0, localCarryWeight:0, recentlyDropped:{},
-  lastCountdownShown:null, settlementSoundPlayed:false
+  lastCountdownShown:null, settlementSoundPlayed:false,
+  lastMoveDir:{x:0,y:1}, dashReadyAt:0
 };
 
 function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
@@ -494,7 +499,7 @@ function attachRoomListeners(){
       showScreen('play');
       if(data.phase === 'countdown' && prevPhase !== 'countdown'){
         S.finalizing = false; S.wasMoving = false;
-        S.lastCountdownShown = null; S.settlementSoundPlayed = false;
+        S.lastCountdownShown = null; S.settlementSoundPlayed = false; S.dashReadyAt = 0;
         const me = S.players[mySessionId];
         if(me){ S.local.x = me.x; S.local.y = me.y; S.localCarryWeight = 0; }
         document.getElementById('countdown-overlay').classList.remove('hidden');
@@ -609,6 +614,9 @@ window.addEventListener('keydown', (e)=>{
     if(S.role === 'owner') arrestAttempt();
     else if(S.role === 'thief') dropItems();
   }
+  if(e.code === 'ShiftLeft' || e.code === 'ShiftRight'){
+    if(!e.repeat && S.phase === 'playing' && S.role === 'owner') dashAttempt();
+  }
 });
 window.addEventListener('keyup', (e)=>{ S.keys[e.code] = false; });
 
@@ -640,7 +648,7 @@ function updateLocalMovement(dt){
   const dir = computeInputDir();
   const isMoving = dir.x!==0 || dir.y!==0;
   const speed = S.role==='owner' ? BASE_SPEED : BASE_SPEED*speedFactor(S.localCarryWeight);
-  if(isMoving) moveWithCollision(dir.x*speed*dt, dir.y*speed*dt);
+  if(isMoving){ moveWithCollision(dir.x*speed*dt, dir.y*speed*dt); S.lastMoveDir = dir; }
 
   if(S.role === 'thief'){
     const me = S.players[mySessionId];
@@ -741,6 +749,24 @@ function arrestAttempt(){
     showToast(`${target.nickname}은(는) 빈손이었다... 오인 체포! 사과하는 중 (5초)`);
     sfxWrongArrest();
   }
+}
+
+function dashAttempt(){
+  const me = S.players[mySessionId];
+  if(!me) return;
+  if(me.frozenUntil && Date.now() < me.frozenUntil) return;
+  const now = Date.now();
+  if(now < S.dashReadyAt){
+    showToast(`대시 쿨다운 ${Math.ceil((S.dashReadyAt-now)/1000)}초 남음`);
+    return;
+  }
+  const inputDir = computeInputDir();
+  const dir = (inputDir.x!==0 || inputDir.y!==0) ? inputDir : S.lastMoveDir;
+  moveWithCollision(dir.x*DASH_DISTANCE, dir.y*DASH_DISTANCE);
+  S.dashReadyAt = now + DASH_COOLDOWN_MS;
+  update(ref(db, `rooms/${S.code}/players/${mySessionId}`), {x:Math.round(S.local.x), y:Math.round(S.local.y)});
+  sfxDash();
+  showToast('대시!');
 }
 
 async function checkRoundEndAndFinalize(){
@@ -958,6 +984,16 @@ function updateHUD(){
       document.getElementById('hud-owner-frozen-sec').textContent = Math.ceil(frozenRemain);
     } else {
       frozenEl.classList.add('hidden');
+    }
+
+    const dashRemain = Math.max(0, (S.dashReadyAt - Date.now())/1000);
+    const dashEl = document.getElementById('hud-dash-status');
+    if(dashRemain > 0){
+      dashEl.textContent = `${Math.ceil(dashRemain)}초`;
+      dashEl.classList.remove('mint'); dashEl.classList.add('amber');
+    } else {
+      dashEl.textContent = '준비됨';
+      dashEl.classList.remove('amber'); dashEl.classList.add('mint');
     }
   }
 
