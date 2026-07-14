@@ -214,6 +214,7 @@
         <div style="margin-top:2px;">무게 <span id="hud-weight">0</span></div>
         <div class="weight-bar"><div class="weight-bar-fill" id="hud-weight-fill"></div></div>
         <div style="margin-top:6px;">TIME <span id="hud-time-thief">--:--</span></div>
+        <div class="hidden" id="hud-frozen" style="margin-top:6px; color:var(--alarm);">사과하는 중... <span id="hud-frozen-sec">5</span>초</div>
       </div>
 
       <div id="toast-area"></div>
@@ -261,9 +262,10 @@ const MAP_W = 1600, MAP_H = 1100;
 const VIEW_W = 560, VIEW_H = 400;
 const SCALE = 1.5;
 const PLAYER_RADIUS = 14, ARREST_RADIUS = 50, PICKUP_RADIUS = 22;
-const BASE_SPEED = 260; // px/s
+const BASE_SPEED = 130; // px/s (기존 260에서 -50%)
 const ROUND_DURATION = 90; // sec, placeholder — 다음 단계에서 밸런스 조정
 const COUNTDOWN_SEC = 3;
+const APOLOGY_MS = 5000;
 const SEND_INTERVAL = 100; // ms, 10Hz throttle
 const INTERP_MS = 150;
 
@@ -491,6 +493,7 @@ async function hostStartRound(){
     updates[`rooms/${S.code}/players/${id}/carryWeight`] = 0;
     updates[`rooms/${S.code}/players/${id}/carriedItems`] = null;
     updates[`rooms/${S.code}/players/${id}/status`] = 'active';
+    updates[`rooms/${S.code}/players/${id}/frozenUntil`] = null;
   });
 
   await update(ref(db), updates);
@@ -607,7 +610,9 @@ function arrestAttempt(){
     update(ref(db), updates);
     showToast(`${target.nickname} 체포됨`);
   } else {
-    showToast(`${target.nickname} 몸수색... 빈손! (사과)`);
+    if(target.frozenUntil && Date.now() < target.frozenUntil) return;
+    update(ref(db, `rooms/${S.code}/players/${targetId}`), {frozenUntil: Date.now()+APOLOGY_MS});
+    showToast(`${target.nickname} 몸수색... 빈손! 사과하는 중 (5초)`);
   }
 }
 
@@ -755,6 +760,16 @@ function updateHUD(){
     document.getElementById('hud-speed').textContent = pct;
     document.getElementById('hud-weight').textContent = S.localCarryWeight;
     document.getElementById('hud-weight-fill').style.width = Math.min(100, S.localCarryWeight*8) + '%';
+
+    const me = S.players[mySessionId];
+    const frozenRemain = me && me.frozenUntil ? (me.frozenUntil - Date.now())/1000 : 0;
+    const frozenEl = document.getElementById('hud-frozen');
+    if(frozenRemain > 0){
+      frozenEl.classList.remove('hidden');
+      document.getElementById('hud-frozen-sec').textContent = Math.ceil(frozenRemain);
+    } else {
+      frozenEl.classList.add('hidden');
+    }
   }
 
   if(S.phase==='countdown'){
@@ -770,8 +785,12 @@ function gameLoop(ts){
   S.lastTs = ts;
 
   if(S.phase === 'playing'){
-    updateLocalMovement(dt);
-    checkPickup();
+    const me = S.players[mySessionId];
+    const isFrozen = S.role==='thief' && me && me.frozenUntil && Date.now() < me.frozenUntil;
+    if(!isFrozen){
+      updateLocalMovement(dt);
+      checkPickup();
+    }
     checkRoundEndAndFinalize();
   }
   updateRemoteInterpolation();
