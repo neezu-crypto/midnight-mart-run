@@ -191,7 +191,7 @@
 
       <div class="howto">
         <p class="howto-title">게임 방법</p>
-        <p><b class="amber-text">주인</b>(방장) — 도둑에게 다가가 <b>스페이스바</b>로 체포한다. 손에 물건이 없으면 체포가 무효 처리되고 도둑은 5초간 사과하며 그 자리에 묶인다.</p>
+        <p><b class="amber-text">주인</b>(방장) — 도둑에게 다가가 <b>스페이스바</b>로 체포한다. 손에 물건이 없으면 오인 체포! 주인이 5초간 사과하며 그 자리에 묶인다.</p>
         <p><b class="mint-text">도둑</b>(시청자, 최대 3인) — 물건에 닿으면 자동으로 줍고, <b>출구</b>로 나가면 탈출 성공. 위험하면 <b>스페이스바</b>로 소지품을 내려놓고 몸을 가볍게 할 수 있다. 많이 들수록 느려지니 욕심과 안전 사이에서 선택하자.</p>
         <p>이동은 <b>WASD</b> 또는 <b>방향키</b>. 전원 탈출/체포되거나 제한시간이 끝나면 라운드가 종료되고 정산된다.</p>
       </div>
@@ -210,6 +210,7 @@
       <div class="hud" id="hud-owner">
         <div class="amber">TIME <span id="hud-time-owner">--:--</span></div>
         <div>THIEVES LEFT <span id="hud-thieves-left">-/-</span></div>
+        <div class="hidden" id="hud-owner-frozen" style="margin-top:6px; color:var(--alarm);">오인 체포... 사과하는 중 <span id="hud-owner-frozen-sec">5</span>초</div>
       </div>
 
       <div class="hud hidden" id="hud-thief">
@@ -217,7 +218,6 @@
         <div style="margin-top:2px;">무게 <span id="hud-weight">0</span></div>
         <div class="weight-bar"><div class="weight-bar-fill" id="hud-weight-fill"></div></div>
         <div style="margin-top:6px;">TIME <span id="hud-time-thief">--:--</span></div>
-        <div class="hidden" id="hud-frozen" style="margin-top:6px; color:var(--alarm);">사과하는 중... <span id="hud-frozen-sec">5</span>초</div>
       </div>
 
       <div id="toast-area"></div>
@@ -626,6 +626,7 @@ function dropItems(){
 function arrestAttempt(){
   const me = S.players[mySessionId];
   if(!me) return;
+  if(me.frozenUntil && Date.now() < me.frozenUntil) return;
   let target = null, targetId = null, bestDist = Infinity;
   Object.entries(S.players).forEach(([id,p])=>{
     if(p.role !== 'thief' || p.status !== 'active') return;
@@ -646,9 +647,8 @@ function arrestAttempt(){
     update(ref(db), updates);
     showToast(`${target.nickname} 체포됨`);
   } else {
-    if(target.frozenUntil && Date.now() < target.frozenUntil) return;
-    update(ref(db, `rooms/${S.code}/players/${targetId}`), {frozenUntil: Date.now()+APOLOGY_MS});
-    showToast(`${target.nickname} 몸수색... 빈손! 사과하는 중 (5초)`);
+    update(ref(db, `rooms/${S.code}/players/${mySessionId}`), {frozenUntil: Date.now()+APOLOGY_MS});
+    showToast(`${target.nickname}은(는) 빈손이었다... 오인 체포! 사과하는 중 (5초)`);
   }
 }
 
@@ -856,13 +856,15 @@ function updateHUD(){
     document.getElementById('hud-speed').textContent = pct;
     document.getElementById('hud-weight').textContent = S.localCarryWeight;
     document.getElementById('hud-weight-fill').style.width = Math.min(100, S.localCarryWeight*8) + '%';
+  }
 
+  if(S.role==='owner'){
     const me = S.players[mySessionId];
     const frozenRemain = me && me.frozenUntil ? (me.frozenUntil - Date.now())/1000 : 0;
-    const frozenEl = document.getElementById('hud-frozen');
+    const frozenEl = document.getElementById('hud-owner-frozen');
     if(frozenRemain > 0){
       frozenEl.classList.remove('hidden');
-      document.getElementById('hud-frozen-sec').textContent = Math.ceil(frozenRemain);
+      document.getElementById('hud-owner-frozen-sec').textContent = Math.ceil(frozenRemain);
     } else {
       frozenEl.classList.add('hidden');
     }
@@ -882,7 +884,7 @@ function gameLoop(ts){
 
   if(S.phase === 'playing'){
     const me = S.players[mySessionId];
-    const isFrozen = S.role==='thief' && me && me.frozenUntil && Date.now() < me.frozenUntil;
+    const isFrozen = me && me.frozenUntil && Date.now() < me.frozenUntil;
     if(!isFrozen){
       updateLocalMovement(dt);
       checkPickup();
