@@ -409,7 +409,7 @@ const ROLE_EMOJI = {owner:'🕵️', thief:'🥷'};
 const EMOJI_FONT = "'Segoe UI Emoji','Noto Color Emoji','Apple Color Emoji',sans-serif";
 const TILE_SIZE = 40;
 const EMOTE_TEXT = {1:'!?', 2:'ㅋㅋ', 3:'!!', 4:':('};
-const EMOTE_DISPLAY_MS = 4000;
+const EMOTE_DISPLAY_MS = 2000;
 
 // ---------------- session ----------------
 function getSessionId(){
@@ -622,19 +622,7 @@ function attachRoomListeners(){
   });
 
   onValue(ref(db, `rooms/${S.code}/emotes`), (snap)=>{
-    const data = snap.val() || {};
-    if(S.role === 'owner'){
-      // 도둑의 이모지는 캔버스 밖에 있어도(INPUT-04) 주인이 반드시 알아채도록 토스트로도 알린다
-      Object.entries(data).forEach(([id,e])=>{
-        const p = S.players[id];
-        if(!p || p.role !== 'thief') return;
-        const prev = S.emotes[id];
-        if(!prev || prev.ts !== e.ts){
-          showToast(`${p.nickname} ${EMOTE_TEXT[e.emoteId] || ''}`);
-        }
-      });
-    }
-    S.emotes = data;
+    S.emotes = snap.val() || {};
   });
 
   onValue(ref(db, `rooms/${S.code}/settlement`), (snap)=>{
