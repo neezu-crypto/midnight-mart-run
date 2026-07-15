@@ -31,13 +31,13 @@
     letter-spacing:0.04em; color:var(--ink);
   }
   #topnav .topnav-brand span{color:var(--amber);}
-  #topnav a.topnav-link{
+  #topnav a.topnav-link, #topnav button.topnav-link{
     display:inline-flex; align-items:center; gap:7px;
     font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:var(--ink);
     background:transparent; border:1px solid var(--amber-dim); border-radius:4px;
-    padding:8px 14px; text-decoration:none; white-space:nowrap;
+    padding:8px 14px; text-decoration:none; white-space:nowrap; cursor:pointer;
   }
-  #topnav a.topnav-link:hover{background:rgba(245,166,35,0.1); border-color:var(--amber);}
+  #topnav a.topnav-link:hover, #topnav button.topnav-link:hover{background:rgba(245,166,35,0.1); border-color:var(--amber);}
   #topnav a.topnav-link .dot{
     width:7px; height:7px; border-radius:50%; background:var(--alarm); flex:none;
   }
@@ -63,7 +63,6 @@
   .sp-row input[type="checkbox"]{accent-color:var(--amber); cursor:pointer;}
 
   .other-games-wrap{position:relative;}
-  #btn-other-games{cursor:pointer;}
   #other-games-panel{
     position:absolute; top:calc(100% + 8px); right:0; min-width:220px;
     background:var(--bg-raised); border:1px solid var(--line); border-radius:6px;
