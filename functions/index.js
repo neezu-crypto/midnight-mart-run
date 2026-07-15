@@ -1,6 +1,6 @@
 const { initializeApp } = require('firebase-admin/app');
 const { getDatabase } = require('firebase-admin/database');
-const { onValueWritten } = require('firebase-functions/v2/database');
+const { onValueWritten, onValueDeleted } = require('firebase-functions/v2/database');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { logger } = require('firebase-functions');
 
@@ -104,13 +104,11 @@ exports.onFinalizeRequested = onValueWritten(
       const timer = room.timer || { startedAt: 0, durationSec: 90 };
 
       const thieves = Object.entries(players).filter(([, p]) => p.role === 'thief');
-      if (thieves.length === 0) {
-        await phaseRef.set('playing');
-        return;
-      }
 
       const elapsed = (Date.now() - (timer.startedAt || 0)) / 1000;
-      const allDone = thieves.every(([, p]) => p.status !== 'active');
+      // 도둑이 중간에 전원 접속 종료해 0명이 된 경우도 "더 이상 진행할 수 없음"으로 보고
+      // 종료 조건을 충족한 것으로 처리한다(그렇지 않으면 시간이 지나도 라운드가 영영 안 끝남).
+      const allDone = thieves.length === 0 || thieves.every(([, p]) => p.status !== 'active');
       const timeUp = elapsed >= (timer.durationSec || 90);
       if (!allDone && !timeUp) {
         // 조건 미충족 상태에서 요청됨(조작 시도 혹은 타이밍 어긋남) - 그대로 되돌림
@@ -155,6 +153,41 @@ exports.onFinalizeRequested = onValueWritten(
       logger.error(`room ${roomId} finalize failed, reverting to playing`, err);
       await phaseRef.set('playing').catch(() => {});
       throw err;
+    }
+  }
+);
+
+// 도둑이 라운드 중 접속을 끊으면 players에서 본인 레코드는 자동 삭제되지만,
+// 들고 있던 아이템은 아무도 처리해주지 않으면 영원히 "carried" 상태로 묶여
+// 남은 도둑들이 주울 수 없게 된다. 이를 막기 위해 실제로 그 아이템을 들고
+// 있었던 게 맞는지 확인한 뒤 바닥으로 되돌린다.
+exports.onPlayerRemoved = onValueDeleted(
+  {
+    ref: '/rooms/{roomId}/players/{sessionId}',
+    instance: DB_INSTANCE,
+    region: REGION,
+  },
+  async (event) => {
+    const roomId = event.params.roomId;
+    const sessionId = event.params.sessionId;
+    const before = event.data.val();
+    const itemIds = Object.keys((before && before.carriedItems) || {});
+    if (itemIds.length === 0) return;
+
+    const db = getDatabase();
+    const updates = {};
+    await Promise.all(
+      itemIds.map(async (itemId) => {
+        const snap = await db.ref(`rooms/${roomId}/items/${itemId}`).get();
+        const item = snap.val();
+        if (item && item.carriedBy === sessionId) {
+          updates[`rooms/${roomId}/items/${itemId}/state`] = 'onFloor';
+          updates[`rooms/${roomId}/items/${itemId}/carriedBy`] = null;
+        }
+      })
+    );
+    if (Object.keys(updates).length > 0) {
+      await db.ref().update(updates);
     }
   }
 );

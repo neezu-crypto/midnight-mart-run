@@ -933,9 +933,10 @@ function triggerEmote(emoteId){
 async function checkRoundEndAndFinalize(){
   if(!S.isHost || S.finalizing) return;
   const thieves = Object.entries(S.players).filter(([,p])=>p.role==='thief');
-  if(thieves.length === 0) return;
   const elapsed = (Date.now() - S.timer.startedAt)/1000;
-  const allDone = thieves.every(([,p])=>p.status !== 'active');
+  // 도둑이 중간에 전원 접속 종료해 0명이 된 경우도 "더 이상 진행할 수 없음"으로 보고
+  // 종료 조건을 충족한 것으로 처리한다(그렇지 않으면 시간이 지나도 라운드가 영영 안 끝남).
+  const allDone = thieves.length === 0 || thieves.every(([,p])=>p.status !== 'active');
   const timeUp = elapsed >= S.timer.durationSec;
   if(!allDone && !timeUp) return;
 
