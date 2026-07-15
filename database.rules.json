@@ -1,6 +1,7 @@
 {
   "rules": {
     "rooms": {
+      ".indexOn": "createdAt",
       "$roomCode": {
         ".read": true,
         ".write": true,
@@ -13,13 +14,22 @@
           ".validate": "newData.isString() && newData.val().length <= 100"
         },
         "phase": {
-          ".validate": "newData.val() == 'waiting' || newData.val() == 'countdown' || newData.val() == 'playing' || newData.val() == 'settled'"
+          ".validate": "newData.val() == 'waiting' || newData.val() == 'countdown' || newData.val() == 'playing'"
         },
         "mapId": {
           ".validate": "newData.isString() && newData.val().length <= 30"
         },
         "ownerSpawnIndex": {
           ".validate": "newData.isNumber()"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "settledAt": {
+          ".write": false
+        },
+        "finalizeRequestedAt": {
+          ".validate": "newData.isNumber() && (!data.exists() || newData.val() - data.val() >= 3000)"
         },
 
         "timer": {
@@ -60,11 +70,7 @@
         },
 
         "settlement": {
-          "$sessionId": {
-            "result": { ".validate": "newData.isString() && newData.val().length <= 20" },
-            "score": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000" },
-            "$other": { ".validate": false }
-          }
+          ".write": false
         },
 
         "emotes": {

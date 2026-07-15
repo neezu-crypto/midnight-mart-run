@@ -530,7 +530,7 @@ async function createRoom(){
   }
   await set(ref(db, `rooms/${code}`), {
     code, hostSessionId: mySessionId, phase:'waiting', mapId: DEFAULT_MAP_ID,
-    timer:{startedAt:0, durationSec:ROUND_DURATION}, ownerSpawnIndex:0
+    timer:{startedAt:0, durationSec:ROUND_DURATION}, ownerSpawnIndex:0, createdAt: Date.now()
   });
   await set(ref(db, `rooms/${code}/players/${mySessionId}`), {
     nickname, role:'owner', x:OWNER_SPAWNS[0].x, y:OWNER_SPAWNS[0].y,
@@ -721,7 +721,7 @@ async function hostStartRound(){
   updates[`rooms/${S.code}/ownerSpawnIndex`] = spawnIdx;
   updates[`rooms/${S.code}/timer`] = {startedAt: Date.now(), durationSec: ROUND_DURATION};
   updates[`rooms/${S.code}/items`] = items;
-  updates[`rooms/${S.code}/settlement`] = {};
+  updates[`rooms/${S.code}/finalizeRequestedAt`] = null;
 
   Object.keys(S.players).forEach(id=>{
     const p = S.players[id];
@@ -927,6 +927,9 @@ function triggerEmote(emoteId){
   sfxClick();
 }
 
+// 정산 계산은 더 이상 여기서 하지 않는다 - 클라이언트가 carriedItems/status를 위조해도
+// 점수에 반영되지 않도록, 종료 조건 감지만 하고 실제 계산은 Cloud Function
+// (onFinalizeRequested)이 서버 상태를 다시 읽어 서버 권한으로 수행한다.
 async function checkRoundEndAndFinalize(){
   if(!S.isHost || S.finalizing) return;
   const thieves = Object.entries(S.players).filter(([,p])=>p.role==='thief');
@@ -937,33 +940,9 @@ async function checkRoundEndAndFinalize(){
   if(!allDone && !timeUp) return;
 
   S.finalizing = true;
-  const updates = {};
-  thieves.forEach(([id,p])=>{
-    let finalStatus = p.status;
-    if(p.status === 'active'){
-      finalStatus = 'timeout';
-      updates[`rooms/${S.code}/players/${id}/status`] = 'timeout';
-      updates[`rooms/${S.code}/players/${id}/carryWeight`] = 0;
-      updates[`rooms/${S.code}/players/${id}/carriedItems`] = null;
-      Object.keys(p.carriedItems || {}).forEach(itemId=>{
-        updates[`rooms/${S.code}/items/${itemId}/state`] = 'returned';
-        updates[`rooms/${S.code}/items/${itemId}/carriedBy`] = null;
-      });
-    }
-    let score = 0;
-    if(finalStatus === 'escaped'){
-      // 클라이언트가 보고한 carriedItems를 그대로 믿지 않고, 실제로 이 플레이어가
-      // 들고 있다고 items 쪽에도 기록된 것만 점수에 반영한다(자기 자신 위조 방지).
-      score = Object.keys(p.carriedItems || {}).reduce((sum,itemId)=>{
-        const item = S.items[itemId];
-        const verified = item && item.state === 'carried' && item.carriedBy === id;
-        return sum + (verified ? item.value : 0);
-      }, 0);
-    }
-    updates[`rooms/${S.code}/settlement/${id}`] = {result:finalStatus, score};
-  });
-  updates[`rooms/${S.code}/phase`] = 'settled';
-  await update(ref(db), updates);
+  await update(ref(db, `rooms/${S.code}`), {finalizeRequestedAt: Date.now()});
+  // 서버 함수가 실패하거나 지연되는 경우를 대비해 일정 시간 후 재시도 가능하게 풀어준다.
+  setTimeout(()=>{ if(S.phase !== 'settled') S.finalizing = false; }, 8000);
 }
 
 // ---------------- settlement UI ----------------
