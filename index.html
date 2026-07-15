@@ -308,7 +308,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
 import {
-  getDatabase, ref, set, get, update, remove, onValue, onDisconnect
+  getDatabase, ref, set, get, update, remove, onValue, onDisconnect, runTransaction
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
 
 const firebaseConfig = {
@@ -548,20 +548,34 @@ async function joinRoom(){
   if(!snap.exists()){ alert('존재하지 않는 방입니다.'); return; }
   const room = snap.val();
   if(room.phase !== 'waiting'){ alert('이미 라운드가 진행 중입니다. 잠시 후 다시 시도하세요.'); return; }
-  const playersSnap = await get(ref(db, `rooms/${code}/players`));
-  const players = playersSnap.val() || {};
-  const thiefCount = Object.values(players).filter(p=>p.role==='thief').length;
-  if(thiefCount >= 3){ alert('정원이 가득 찼습니다 (최대 3인).'); return; }
-  const existing = players[mySessionId];
-  if(existing && existing.role !== 'thief'){
+
+  // 정원(최대 3인) 체크와 등록을 트랜잭션으로 묶어, 여러 명이 동시에 입장을 시도해도
+  // 정원을 초과해 등록되는 경쟁 상태(race condition)가 생기지 않게 한다.
+  let joinError = null;
+  const result = await runTransaction(ref(db, `rooms/${code}/players`), (players)=>{
+    joinError = null;
+    players = players || {};
+    const existing = players[mySessionId];
+    if(existing && existing.role !== 'thief'){ joinError = 'role-conflict'; return; }
+    if(existing && existing.role === 'thief') return players;
+    const thiefCount = Object.values(players).filter(p=>p && p.role==='thief').length;
+    if(thiefCount >= 3){ joinError = 'full'; return; }
+    players[mySessionId] = {
+      nickname, role:'thief', x:0, y:0,
+      carryWeight:0, carriedItems:null, status:'active', connected:true
+    };
+    return players;
+  });
+
+  if(joinError === 'role-conflict'){
     alert('이 브라우저는 이미 이 방에 다른 역할로 참여 중입니다 (같은 브라우저의 다른 탭에서 방을 만들지 않았는지 확인해주세요). 도둑으로 입장하려면 다른 브라우저나 시크릿 창을 사용하세요.');
     return;
   }
+  if(!result.committed || joinError === 'full'){
+    alert('정원이 가득 찼습니다 (최대 3인).');
+    return;
+  }
 
-  await set(ref(db, `rooms/${code}/players/${mySessionId}`), {
-    nickname, role:'thief', x:0, y:0,
-    carryWeight:0, carriedItems:null, status:'active', connected:true
-  });
   onDisconnect(ref(db, `rooms/${code}/players/${mySessionId}`)).remove();
   enterRoom(code, 'thief', false);
 }
@@ -636,7 +650,12 @@ function updateLobbyUI(){
   list.innerHTML = '';
   Object.values(S.players).forEach(p=>{
     const li = document.createElement('li');
-    li.innerHTML = `<span>${p.nickname}</span><span class="${p.role==='owner'?'role-owner':'role-thief'}">${p.role==='owner'?'주인':'도둑'}</span>`;
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = p.nickname;
+    const roleSpan = document.createElement('span');
+    roleSpan.className = p.role==='owner' ? 'role-owner' : 'role-thief';
+    roleSpan.textContent = p.role==='owner' ? '주인' : '도둑';
+    li.append(nameSpan, roleSpan);
     list.appendChild(li);
   });
   document.getElementById('btn-start').classList.toggle('hidden', !S.isHost);
@@ -933,9 +952,12 @@ async function checkRoundEndAndFinalize(){
     }
     let score = 0;
     if(finalStatus === 'escaped'){
+      // 클라이언트가 보고한 carriedItems를 그대로 믿지 않고, 실제로 이 플레이어가
+      // 들고 있다고 items 쪽에도 기록된 것만 점수에 반영한다(자기 자신 위조 방지).
       score = Object.keys(p.carriedItems || {}).reduce((sum,itemId)=>{
         const item = S.items[itemId];
-        return sum + (item ? item.value : 0);
+        const verified = item && item.state === 'carried' && item.carriedBy === id;
+        return sum + (verified ? item.value : 0);
       }, 0);
     }
     updates[`rooms/${S.code}/settlement/${id}`] = {result:finalStatus, score};
@@ -953,9 +975,25 @@ function renderSettlement(){
   })).sort((a,b)=>b.score-a.score);
 
   const resultLabel = {escaped:'탈출 성공', arrested:'체포됨', timeout:'미탈출'};
-  lines.innerHTML = rows.map(r=>
-    `<div class="receipt-line"><span>${r.nickname} — ${resultLabel[r.result]||r.result}</span><span>+${r.score}</span></div>`
-  ).join('') + (rows.length ? `<div class="receipt-line total"><span>1위</span><span>${rows[0].nickname}</span></div>` : '');
+  lines.innerHTML = '';
+  rows.forEach(r=>{
+    const line = document.createElement('div');
+    line.className = 'receipt-line';
+    const label = document.createElement('span');
+    label.textContent = `${r.nickname} — ${resultLabel[r.result]||r.result}`;
+    const score = document.createElement('span');
+    score.textContent = `+${r.score}`;
+    line.append(label, score);
+    lines.appendChild(line);
+  });
+  if(rows.length){
+    const total = document.createElement('div');
+    total.className = 'receipt-line total';
+    const rankLabel = document.createElement('span'); rankLabel.textContent = '1위';
+    const winnerName = document.createElement('span'); winnerName.textContent = rows[0].nickname;
+    total.append(rankLabel, winnerName);
+    lines.appendChild(total);
+  }
 
   const thiefWin = rows.some(r=>r.result === 'escaped');
   const winnerEl = document.getElementById('receipt-winner');

@@ -33,8 +33,8 @@
             ".validate": "newData.hasChildren(['nickname','role'])",
             "nickname": { ".validate": "newData.isString() && newData.val().length <= 20" },
             "role": { ".validate": "newData.val() == 'owner' || newData.val() == 'thief'" },
-            "x": { ".validate": "newData.isNumber() && newData.val() >= -100 && newData.val() <= 3000" },
-            "y": { ".validate": "newData.isNumber() && newData.val() >= -100 && newData.val() <= 3000" },
+            "x": { ".validate": "newData.isNumber() && newData.val() >= -50 && newData.val() <= 1700" },
+            "y": { ".validate": "newData.isNumber() && newData.val() >= -50 && newData.val() <= 1200" },
             "carryWeight": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
             "carriedItems": {
               "$itemId": { ".validate": "newData.isBoolean()" }
@@ -48,8 +48,8 @@
 
         "items": {
           "$itemId": {
-            "x": { ".validate": "newData.isNumber() && newData.val() >= -100 && newData.val() <= 3000" },
-            "y": { ".validate": "newData.isNumber() && newData.val() >= -100 && newData.val() <= 3000" },
+            "x": { ".validate": "newData.isNumber() && newData.val() >= -50 && newData.val() <= 1700" },
+            "y": { ".validate": "newData.isNumber() && newData.val() >= -50 && newData.val() <= 1200" },
             "tier": { ".validate": "newData.val() == 'S' || newData.val() == 'M' || newData.val() == 'L'" },
             "value": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
             "weight": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
@@ -70,7 +70,7 @@
         "emotes": {
           "$sessionId": {
             "emoteId": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 4" },
-            "ts": { ".validate": "newData.isNumber()" },
+            "ts": { ".validate": "newData.isNumber() && (!data.exists() || newData.val() - data.val() >= 700)" },
             "$other": { ".validate": false }
           }
         },
