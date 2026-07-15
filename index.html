@@ -61,6 +61,19 @@
   .sp-row-head label{display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--ink); cursor:pointer;}
   .sp-row input[type="range"]{width:100%; accent-color:var(--amber);}
   .sp-row input[type="checkbox"]{accent-color:var(--amber); cursor:pointer;}
+
+  .other-games-wrap{position:relative;}
+  #btn-other-games{cursor:pointer;}
+  #other-games-panel{
+    position:absolute; top:calc(100% + 8px); right:0; min-width:220px;
+    background:var(--bg-raised); border:1px solid var(--line); border-radius:6px;
+    padding:6px; box-shadow:0 12px 32px rgba(0,0,0,0.45); z-index:20;
+  }
+  #other-games-panel a{
+    display:block; padding:9px 12px; font-size:12.5px; color:var(--ink);
+    text-decoration:none; border-radius:4px; white-space:nowrap;
+  }
+  #other-games-panel a:hover{background:rgba(245,166,35,0.1); color:var(--amber);}
   .page-content{
     flex:1; display:flex; align-items:center; justify-content:center; padding:24px;
   }
@@ -182,6 +195,13 @@
     <div class="sound-btn-wrap">
       <button class="topnav-icon-btn" id="btn-sound-toggle" title="사운드 설정" type="button">🔊</button>
       <div id="sound-panel" class="hidden"></div>
+    </div>
+    <div class="other-games-wrap">
+      <button class="topnav-link" id="btn-other-games" type="button">개발자의 다른 게임 ▾</button>
+      <div id="other-games-panel" class="hidden">
+        <a href="https://neezu-crypto.github.io/soop-stock-market/" target="_blank" rel="noopener noreferrer">스트리머 주식시장</a>
+        <a href="https://neezu-crypto.github.io/dont-click-ads/" target="_blank" rel="noopener noreferrer">절대 광고를 클릭하지 마</a>
+      </div>
     </div>
     <a class="topnav-link" href="https://www.sooplive.com/station/skftodwocks2" target="_blank" rel="noopener noreferrer">
       <span class="dot"></span>개발자 방송국 바로가기
@@ -1128,9 +1148,16 @@ document.getElementById('btn-sound-toggle').addEventListener('click', (e)=>{
   e.stopPropagation();
   document.getElementById('sound-panel').classList.toggle('hidden');
 });
+document.getElementById('btn-other-games').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  document.getElementById('other-games-panel').classList.toggle('hidden');
+});
 document.addEventListener('click', (e)=>{
   if(!document.querySelector('.sound-btn-wrap').contains(e.target)){
     document.getElementById('sound-panel').classList.add('hidden');
+  }
+  if(!document.querySelector('.other-games-wrap').contains(e.target)){
+    document.getElementById('other-games-panel').classList.add('hidden');
   }
 });
 buildSoundPanel();
