@@ -336,6 +336,7 @@ const DROP_PICKUP_COOLDOWN_MS = 3000; // 본인이 내려놓은 물건은 3초 �
 const DASH_DISTANCE = 160; // px, 주인 전용 특수스킬
 const THIEF_VISION_RADIUS = DASH_DISTANCE; // 도둑이 주인을 볼 수 있는 반경
 const DASH_COOLDOWN_MS = 10000;
+const DASH_ANIM_MS = 150; // 대시 시 본인 화면에서 순간이동 대신 보간 표시
 const SEND_INTERVAL = 100; // ms, 10Hz throttle
 const INTERP_MS = 150;
 
@@ -470,7 +471,7 @@ const S = {
   code:null, role:null, isHost:false,
   phase:'waiting', timer:{startedAt:0,durationSec:ROUND_DURATION}, hostSessionId:null,
   players:{}, items:{}, settlement:{},
-  local:{x:800,y:550}, keys:{}, wasMoving:false, lastSendTs:0,
+  local:{x:800,y:550}, localRender:{x:800,y:550}, dashAnim:null, keys:{}, wasMoving:false, lastSendTs:0,
   remoteRender:{}, finalizing:false, lastTs:0, localCarryWeight:0, recentlyDropped:{},
   lastCountdownShown:null, settlementSoundPlayed:false,
   lastMoveDir:{x:0,y:1}, dashReadyAt:0, lastExitWarnTs:0
@@ -583,7 +584,10 @@ function attachRoomListeners(){
         S.finalizing = false; S.wasMoving = false;
         S.lastCountdownShown = null; S.settlementSoundPlayed = false; S.dashReadyAt = 0;
         const me = S.players[mySessionId];
-        if(me){ S.local.x = me.x; S.local.y = me.y; S.localCarryWeight = 0; }
+        if(me){
+          S.local.x = me.x; S.local.y = me.y; S.localCarryWeight = 0;
+          S.localRender.x = me.x; S.localRender.y = me.y; S.dashAnim = null;
+        }
         document.getElementById('countdown-overlay').classList.remove('hidden');
         document.getElementById('settlement-overlay').classList.add('hidden');
       }
@@ -862,7 +866,9 @@ function dashAttempt(){
   }
   const inputDir = computeInputDir();
   const dir = (inputDir.x!==0 || inputDir.y!==0) ? inputDir : S.lastMoveDir;
+  const startX = S.local.x, startY = S.local.y;
   moveWithCollision(dir.x*DASH_DISTANCE, dir.y*DASH_DISTANCE);
+  S.dashAnim = {startX, startY, endX:S.local.x, endY:S.local.y, t0:performance.now(), dur:DASH_ANIM_MS};
   S.dashReadyAt = now + DASH_COOLDOWN_MS;
   update(ref(db, `rooms/${S.code}/players/${mySessionId}`), {x:Math.round(S.local.x), y:Math.round(S.local.y)});
   sfxDash();
@@ -934,6 +940,18 @@ const canvas = document.getElementById('game-canvas');
 canvas.width = VIEW_W*SCALE; canvas.height = VIEW_H*SCALE;
 const ctx = canvas.getContext('2d');
 
+function updateLocalRenderInterp(){
+  if(S.dashAnim){
+    const t = clamp((performance.now()-S.dashAnim.t0)/S.dashAnim.dur, 0, 1);
+    S.localRender.x = S.dashAnim.startX + (S.dashAnim.endX-S.dashAnim.startX)*t;
+    S.localRender.y = S.dashAnim.startY + (S.dashAnim.endY-S.dashAnim.startY)*t;
+    if(t >= 1) S.dashAnim = null;
+  } else {
+    S.localRender.x = S.local.x;
+    S.localRender.y = S.local.y;
+  }
+}
+
 function updateRemoteInterpolation(){
   const now = performance.now();
   Object.entries(S.players).forEach(([id,p])=>{
@@ -980,8 +998,8 @@ function render(){
 
   if(S.phase === 'waiting'){ ctx.restore(); return; }
 
-  const camX = clamp(S.local.x - VIEW_W/2, 0, MAP_W-VIEW_W);
-  const camY = clamp(S.local.y - VIEW_H/2, 0, MAP_H-VIEW_H);
+  const camX = clamp(S.localRender.x - VIEW_W/2, 0, MAP_W-VIEW_W);
+  const camY = clamp(S.localRender.y - VIEW_H/2, 0, MAP_H-VIEW_H);
 
   drawFloor(camX, camY);
 
@@ -1018,7 +1036,7 @@ function render(){
 
   Object.values(S.items).forEach(item=>{
     if(item.state !== 'onFloor') return;
-    if(S.role==='thief' && Math.hypot(item.x-S.local.x, item.y-S.local.y) > THIEF_VISION_RADIUS) return;
+    if(S.role==='thief' && Math.hypot(item.x-S.localRender.x, item.y-S.localRender.y) > THIEF_VISION_RADIUS) return;
     const x = item.x-camX, y = item.y-camY;
     if(x<-16||x>VIEW_W+16||y<-16||y>VIEW_H+16) return;
     drawGlow(x, y, 16, item.tier==='L' ? 'rgba(228,72,61,0.35)' : item.tier==='M' ? 'rgba(79,209,197,0.3)' : 'rgba(245,166,35,0.25)');
@@ -1031,10 +1049,10 @@ function render(){
   Object.entries(S.players).forEach(([id,p])=>{
     if(p.role==='thief' && p.status!=='active') return;
     let x,y;
-    if(id===mySessionId){ x=S.local.x; y=S.local.y; }
+    if(id===mySessionId){ x=S.localRender.x; y=S.localRender.y; }
     else{ const r=S.remoteRender[id]; if(!r) return; x=r.renderX; y=r.renderY; }
     if(S.role==='thief' && p.role==='owner' && id!==mySessionId){
-      const dist = Math.hypot(x-S.local.x, y-S.local.y);
+      const dist = Math.hypot(x-S.localRender.x, y-S.localRender.y);
       if(dist > THIEF_VISION_RADIUS) return;
     }
     const sx=x-camX, sy=y-camY;
@@ -1062,7 +1080,7 @@ function render(){
   });
 
   if(S.role==='thief'){
-    const vsx = S.local.x-camX, vsy = S.local.y-camY;
+    const vsx = S.localRender.x-camX, vsy = S.localRender.y-camY;
 
     // desaturate everything outside the vision radius
     ctx.save();
@@ -1155,6 +1173,7 @@ function gameLoop(ts){
     }
     checkRoundEndAndFinalize();
   }
+  updateLocalRenderInterp();
   updateRemoteInterpolation();
   if(S.phase !== 'waiting'){ render(); updateHUD(); }
   requestAnimationFrame(gameLoop);
