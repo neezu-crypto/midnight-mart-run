@@ -164,6 +164,18 @@
   }
   @keyframes fadein{from{opacity:0; transform:translateY(-6px);} to{opacity:1; transform:translateY(0);}}
 
+  /* ---- thief defeat / spectate ---- */
+  #thief-defeat-overlay{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    background:rgba(12,14,19,0.75);
+  }
+  .defeat-box{
+    background:var(--bg-raised); border:1px solid var(--alarm); border-radius:8px;
+    padding:26px 34px; text-align:center;
+  }
+  .defeat-title{font-family:'Oswald',sans-serif; font-size:26px; color:var(--alarm); letter-spacing:0.04em; margin-bottom:8px;}
+  .defeat-sub{font-size:12.5px; color:var(--ink-dim);}
+
   /* ---- settlement ---- */
   #settlement-overlay{
     position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
@@ -276,15 +288,25 @@
       </div>
 
       <div class="hud hidden" id="hud-thief">
-        <div class="mint">SPEED <span id="hud-speed">100</span>%</div>
-        <div style="margin-top:2px;">무게 <span id="hud-weight">0</span></div>
-        <div class="weight-bar"><div class="weight-bar-fill" id="hud-weight-fill"></div></div>
+        <div id="hud-thief-active">
+          <div class="mint">SPEED <span id="hud-speed">100</span>%</div>
+          <div style="margin-top:2px;">무게 <span id="hud-weight">0</span></div>
+          <div class="weight-bar"><div class="weight-bar-fill" id="hud-weight-fill"></div></div>
+        </div>
+        <div class="hidden mint" id="hud-spectate-line">👁 관전 중: <span id="hud-spectate-name">-</span></div>
         <div style="margin-top:6px;">TIME <span id="hud-time-thief">--:--</span></div>
       </div>
 
       <div id="toast-area"></div>
 
       <div id="countdown-overlay" class="hidden">3</div>
+
+      <div id="thief-defeat-overlay" class="hidden">
+        <div class="defeat-box">
+          <div class="defeat-title">패배</div>
+          <div class="defeat-sub">체포당했고 남은 동료가 없어요. 라운드 결과를 기다려주세요...</div>
+        </div>
+      </div>
 
       <div id="settlement-overlay" class="hidden">
         <div class="receipt">
@@ -500,7 +522,8 @@ const S = {
   local:{x:800,y:550}, localRender:{x:800,y:550}, dashAnim:null, keys:{}, wasMoving:false, lastSendTs:0,
   remoteRender:{}, finalizing:false, lastTs:0, localCarryWeight:0, recentlyDropped:{},
   lastCountdownShown:null, settlementSoundPlayed:false,
-  lastMoveDir:{x:0,y:1}, dashReadyAt:0, lastExitWarnTs:0, lastArrestResultTs:null
+  lastMoveDir:{x:0,y:1}, dashReadyAt:0, lastExitWarnTs:0, lastArrestResultTs:null,
+  spectateTargetId:null
 };
 
 function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
@@ -615,6 +638,7 @@ function attachRoomListeners(){
       if(data.phase === 'countdown' && prevPhase !== 'countdown'){
         S.finalizing = false; S.wasMoving = false;
         S.lastCountdownShown = null; S.settlementSoundPlayed = false; S.dashReadyAt = 0;
+        S.spectateTargetId = null;
         const me = S.players[mySessionId];
         if(me){
           S.local.x = me.x; S.local.y = me.y; S.localCarryWeight = 0;
@@ -622,6 +646,9 @@ function attachRoomListeners(){
         }
         document.getElementById('countdown-overlay').classList.remove('hidden');
         document.getElementById('settlement-overlay').classList.add('hidden');
+        document.getElementById('thief-defeat-overlay').classList.add('hidden');
+        document.getElementById('hud-thief-active').classList.remove('hidden');
+        document.getElementById('hud-spectate-line').classList.add('hidden');
       }
       if(data.phase === 'playing'){
         document.getElementById('countdown-overlay').classList.add('hidden');
@@ -1022,6 +1049,25 @@ function updateRemoteInterpolation(){
   });
 }
 
+// 잡힌(체포/타임아웃) 도둑은 살아있는 다른 도둑이 있으면 그쪽 시점으로 관전하고,
+// 아무도 안 남았으면 spectateTargetId가 null로 유지되어 개인 패배 화면을 띄운다.
+function updateSpectateTarget(){
+  if(S.role !== 'thief'){ S.spectateTargetId = null; return; }
+  const me = S.players[mySessionId];
+  if(!me || me.status === 'active'){ S.spectateTargetId = null; return; }
+  const alive = Object.entries(S.players).find(([id,p])=>id!==mySessionId && p.role==='thief' && p.status==='active');
+  S.spectateTargetId = alive ? alive[0] : null;
+}
+
+// 카메라 중심 좌표 - 관전 중이면 관전 대상, 아니면 본인 위치를 기준으로 한다.
+function getCameraFocus(){
+  if(S.spectateTargetId){
+    const r = S.remoteRender[S.spectateTargetId];
+    if(r) return {x:r.renderX, y:r.renderY};
+  }
+  return {x:S.localRender.x, y:S.localRender.y};
+}
+
 function drawFloor(camX, camY){
   const startTx = Math.floor(camX/TILE_SIZE), startTy = Math.floor(camY/TILE_SIZE);
   for(let ty=startTy; ty*TILE_SIZE < camY+VIEW_H; ty++){
@@ -1076,8 +1122,9 @@ function render(){
 
   if(S.phase === 'waiting'){ ctx.restore(); return; }
 
-  const camX = clamp(S.localRender.x - VIEW_W/2, 0, MAP_W-VIEW_W);
-  const camY = clamp(S.localRender.y - VIEW_H/2, 0, MAP_H-VIEW_H);
+  const camFocus = getCameraFocus();
+  const camX = clamp(camFocus.x - VIEW_W/2, 0, MAP_W-VIEW_W);
+  const camY = clamp(camFocus.y - VIEW_H/2, 0, MAP_H-VIEW_H);
 
   drawFloor(camX, camY);
 
@@ -1114,7 +1161,7 @@ function render(){
 
   Object.values(S.items).forEach(item=>{
     if(item.state !== 'onFloor') return;
-    if(S.role==='thief' && Math.hypot(item.x-S.localRender.x, item.y-S.localRender.y) > THIEF_VISION_RADIUS) return;
+    if(S.role==='thief' && Math.hypot(item.x-camFocus.x, item.y-camFocus.y) > THIEF_VISION_RADIUS) return;
     const x = item.x-camX, y = item.y-camY;
     if(x<-16||x>VIEW_W+16||y<-16||y>VIEW_H+16) return;
     drawGlow(x, y, 16, item.tier==='L' ? 'rgba(228,72,61,0.35)' : item.tier==='M' ? 'rgba(79,209,197,0.3)' : 'rgba(245,166,35,0.25)');
@@ -1130,7 +1177,7 @@ function render(){
     if(id===mySessionId){ x=S.localRender.x; y=S.localRender.y; }
     else{ const r=S.remoteRender[id]; if(!r) return; x=r.renderX; y=r.renderY; }
     if(S.role==='thief' && p.role==='owner' && id!==mySessionId){
-      const dist = Math.hypot(x-S.localRender.x, y-S.localRender.y);
+      const dist = Math.hypot(x-camFocus.x, y-camFocus.y);
       if(dist > THIEF_VISION_RADIUS) return;
     }
     const sx=x-camX, sy=y-camY;
@@ -1177,7 +1224,7 @@ function render(){
   }
 
   if(S.role==='thief'){
-    const vsx = S.localRender.x-camX, vsy = S.localRender.y-camY;
+    const vsx = camFocus.x-camX, vsy = camFocus.y-camY;
 
     // desaturate everything outside the vision radius
     ctx.save();
@@ -1220,6 +1267,18 @@ function updateHUD(){
     document.getElementById('hud-speed').textContent = pct;
     document.getElementById('hud-weight').textContent = S.localCarryWeight;
     document.getElementById('hud-weight-fill').style.width = Math.min(100, S.localCarryWeight*8) + '%';
+
+    const me = S.players[mySessionId];
+    const spectating = !!S.spectateTargetId;
+    document.getElementById('hud-thief-active').classList.toggle('hidden', spectating);
+    document.getElementById('hud-spectate-line').classList.toggle('hidden', !spectating);
+    if(spectating){
+      const target = S.players[S.spectateTargetId];
+      document.getElementById('hud-spectate-name').textContent = target ? target.nickname : '???';
+    }
+
+    const defeated = me && me.status !== 'active' && me.status !== 'escaped' && !spectating && S.phase === 'playing';
+    document.getElementById('thief-defeat-overlay').classList.toggle('hidden', !defeated);
   }
 
   if(S.role==='owner'){
@@ -1264,10 +1323,12 @@ function gameLoop(ts){
   if(S.phase === 'playing'){
     const me = S.players[mySessionId];
     const isFrozen = me && me.frozenUntil && Date.now() < me.frozenUntil;
-    if(!isFrozen){
+    const canAct = me && me.status === 'active';
+    if(!isFrozen && canAct){
       updateLocalMovement(dt);
       checkPickup();
     }
+    updateSpectateTarget();
     checkRoundEndAndFinalize();
   }
   updateLocalRenderInterp();
