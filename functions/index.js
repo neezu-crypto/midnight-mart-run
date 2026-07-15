@@ -14,73 +14,74 @@ const APOLOGY_MS = 5000;
 // 라운드 종료 조건(전원 탈출/체포 또는 시간 종료)을 서버 상태 기준으로 재확인하고,
 // 충족됐으면 정산을 확정한다. finalizeRequestedAt 트리거뿐 아니라 체포 처리 직후,
 // 그리고 주기적 스윕에서도 재사용해 "방장 클라이언트가 유일한 트리거"인 상황을 없앤다.
+//
+// 이전에는 phase를 'playing' -> 'finalizing'으로 바꾸는 트랜잭션으로 중복 실행을
+// 막았는데, 실제 운영 중 이 트랜잭션이 커밋되지 않는(원인 불명) 사례가 있어 라운드가
+// 영영 끝나지 않는 문제가 있었다. 트랜잭션 없이 단순 조건 확인 후 바로 정산하도록
+// 단순화한다 - 두 트리거가 극히 드물게 동시에 실행돼도 같은 결과를 두 번 쓰는 것뿐이라
+// 안전(idempotent)하다.
 async function tryFinalizeRoom(db, roomId) {
-  const phaseRef = db.ref(`rooms/${roomId}/phase`);
-  const txResult = await phaseRef.transaction((current) =>
-    current === 'playing' ? 'finalizing' : undefined
-  );
-  if (!txResult.committed) return;
+  const roomSnap = await db.ref(`rooms/${roomId}`).get();
+  const room = roomSnap.val();
+  if (!room) {
+    logger.log(`tryFinalizeRoom room=${roomId} skipped: room not found`);
+    return;
+  }
+  if (room.phase !== 'playing') {
+    logger.log(`tryFinalizeRoom room=${roomId} skipped: phase=${room.phase}`);
+    return;
+  }
 
-  try {
-    const roomSnap = await db.ref(`rooms/${roomId}`).get();
-    const room = roomSnap.val();
-    if (!room) return;
+  const players = room.players || {};
+  const items = room.items || {};
+  const timer = room.timer || { startedAt: 0, durationSec: 90 };
 
-    const players = room.players || {};
-    const items = room.items || {};
-    const timer = room.timer || { startedAt: 0, durationSec: 90 };
+  const thieves = Object.entries(players).filter(([, p]) => p.role === 'thief');
 
-    const thieves = Object.entries(players).filter(([, p]) => p.role === 'thief');
+  const elapsed = (Date.now() - (timer.startedAt || 0)) / 1000;
+  // 도둑이 중간에 전원 접속 종료해 0명이 된 경우도 "더 이상 진행할 수 없음"으로 보고
+  // 종료 조건을 충족한 것으로 처리한다(그렇지 않으면 시간이 지나도 라운드가 영영 안 끝남).
+  const allDone = thieves.length === 0 || thieves.every(([, p]) => p.status !== 'active');
+  const timeUp = elapsed >= (timer.durationSec || 90);
+  if (!allDone && !timeUp) {
+    logger.log(`tryFinalizeRoom room=${roomId} not ready: thieves=${thieves.length} elapsed=${elapsed.toFixed(1)}s`);
+    return;
+  }
 
-    const elapsed = (Date.now() - (timer.startedAt || 0)) / 1000;
-    // 도둑이 중간에 전원 접속 종료해 0명이 된 경우도 "더 이상 진행할 수 없음"으로 보고
-    // 종료 조건을 충족한 것으로 처리한다(그렇지 않으면 시간이 지나도 라운드가 영영 안 끝남).
-    const allDone = thieves.length === 0 || thieves.every(([, p]) => p.status !== 'active');
-    const timeUp = elapsed >= (timer.durationSec || 90);
-    if (!allDone && !timeUp) {
-      // 조건 미충족 상태에서 요청됨(조작 시도 혹은 타이밍 어긋남) - 그대로 되돌림
-      await phaseRef.set('playing');
-      return;
+  const updates = {};
+  const settlement = {};
+  thieves.forEach(([id, p]) => {
+    let finalStatus = p.status;
+    if (p.status === 'active') {
+      finalStatus = 'timeout';
+      updates[`rooms/${roomId}/players/${id}/status`] = 'timeout';
+      updates[`rooms/${roomId}/players/${id}/carryWeight`] = 0;
+      updates[`rooms/${roomId}/players/${id}/carriedItems`] = null;
+      Object.keys(p.carriedItems || {}).forEach((itemId) => {
+        updates[`rooms/${roomId}/items/${itemId}/state`] = 'returned';
+        updates[`rooms/${roomId}/items/${itemId}/carriedBy`] = null;
+      });
     }
 
-    const updates = {};
-    const settlement = {};
-    thieves.forEach(([id, p]) => {
-      let finalStatus = p.status;
-      if (p.status === 'active') {
-        finalStatus = 'timeout';
-        updates[`rooms/${roomId}/players/${id}/status`] = 'timeout';
-        updates[`rooms/${roomId}/players/${id}/carryWeight`] = 0;
-        updates[`rooms/${roomId}/players/${id}/carriedItems`] = null;
-        Object.keys(p.carriedItems || {}).forEach((itemId) => {
-          updates[`rooms/${roomId}/items/${itemId}/state`] = 'returned';
-          updates[`rooms/${roomId}/items/${itemId}/carriedBy`] = null;
-        });
-      }
+    let score = 0;
+    if (finalStatus === 'escaped') {
+      // 클라이언트가 보고한 carriedItems를 그대로 믿지 않고, items 쪽에도
+      // 실제로 이 플레이어가 들고 있다고 기록된 항목만 점수로 인정한다.
+      score = Object.keys(p.carriedItems || {}).reduce((sum, itemId) => {
+        const item = items[itemId];
+        const verified = item && item.state === 'carried' && item.carriedBy === id;
+        return sum + (verified ? item.value : 0);
+      }, 0);
+    }
+    settlement[id] = { result: finalStatus, score };
+  });
 
-      let score = 0;
-      if (finalStatus === 'escaped') {
-        // 클라이언트가 보고한 carriedItems를 그대로 믿지 않고, items 쪽에도
-        // 실제로 이 플레이어가 들고 있다고 기록된 항목만 점수로 인정한다.
-        score = Object.keys(p.carriedItems || {}).reduce((sum, itemId) => {
-          const item = items[itemId];
-          const verified = item && item.state === 'carried' && item.carriedBy === id;
-          return sum + (verified ? item.value : 0);
-        }, 0);
-      }
-      settlement[id] = { result: finalStatus, score };
-    });
-
-    // 이전 라운드의 잔여 정산 데이터가 남지 않도록 settlement 전체를 교체한다.
-    updates[`rooms/${roomId}/settlement`] = settlement;
-    updates[`rooms/${roomId}/phase`] = 'settled';
-    updates[`rooms/${roomId}/settledAt`] = Date.now();
-    await db.ref().update(updates);
-  } catch (err) {
-    logger.error(`room ${roomId} finalize failed, reverting to playing`, err);
-    await phaseRef.set('playing').catch(() => {});
-    throw err;
-  }
+  // 이전 라운드의 잔여 정산 데이터가 남지 않도록 settlement 전체를 교체한다.
+  updates[`rooms/${roomId}/settlement`] = settlement;
+  updates[`rooms/${roomId}/phase`] = 'settled';
+  updates[`rooms/${roomId}/settledAt`] = Date.now();
+  await db.ref().update(updates);
+  logger.log(`tryFinalizeRoom room=${roomId} settled: thieves=${thieves.length} allDone=${allDone} timeUp=${timeUp}`);
 }
 
 // 주인(owner) 클라이언트가 스페이스바를 누르면 arrestRequestedAt만 남기고,
