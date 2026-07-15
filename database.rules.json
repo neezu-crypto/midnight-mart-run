@@ -1,0 +1,79 @@
+{
+  "rules": {
+    "rooms": {
+      "$roomCode": {
+        ".read": true,
+        ".write": true,
+        ".validate": "$roomCode.matches(/^[A-Z0-9]{6}$/) && newData.hasChildren(['code','phase'])",
+
+        "code": {
+          ".validate": "newData.isString() && newData.val() == $roomCode"
+        },
+        "hostSessionId": {
+          ".validate": "newData.isString() && newData.val().length <= 100"
+        },
+        "phase": {
+          ".validate": "newData.val() == 'waiting' || newData.val() == 'countdown' || newData.val() == 'playing' || newData.val() == 'settled'"
+        },
+        "mapId": {
+          ".validate": "newData.isString() && newData.val().length <= 30"
+        },
+        "ownerSpawnIndex": {
+          ".validate": "newData.isNumber()"
+        },
+
+        "timer": {
+          "startedAt": { ".validate": "newData.isNumber()" },
+          "durationSec": { ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 600" },
+          "$other": { ".validate": false }
+        },
+
+        "players": {
+          "$sessionId": {
+            ".validate": "newData.hasChildren(['nickname','role'])",
+            "nickname": { ".validate": "newData.isString() && newData.val().length <= 20" },
+            "role": { ".validate": "newData.val() == 'owner' || newData.val() == 'thief'" },
+            "x": { ".validate": "newData.isNumber() && newData.val() >= -100 && newData.val() <= 3000" },
+            "y": { ".validate": "newData.isNumber() && newData.val() >= -100 && newData.val() <= 3000" },
+            "carryWeight": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+            "carriedItems": {
+              "$itemId": { ".validate": "newData.isBoolean()" }
+            },
+            "status": { ".validate": "newData.val() == 'active' || newData.val() == 'escaped' || newData.val() == 'arrested' || newData.val() == 'timeout'" },
+            "connected": { ".validate": "newData.isBoolean()" },
+            "frozenUntil": { ".validate": "newData.isNumber() || newData.val() == null" },
+            "$other": { ".validate": false }
+          }
+        },
+
+        "items": {
+          "$itemId": {
+            "x": { ".validate": "newData.isNumber() && newData.val() >= -100 && newData.val() <= 3000" },
+            "y": { ".validate": "newData.isNumber() && newData.val() >= -100 && newData.val() <= 3000" },
+            "tier": { ".validate": "newData.val() == 'S' || newData.val() == 'M' || newData.val() == 'L'" },
+            "value": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
+            "weight": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+            "state": { ".validate": "newData.val() == 'onFloor' || newData.val() == 'carried' || newData.val() == 'returned'" },
+            "carriedBy": { ".validate": "newData.isString() || newData.val() == null" },
+            "$other": { ".validate": false }
+          }
+        },
+
+        "settlement": {
+          "$sessionId": {
+            "result": { ".validate": "newData.isString() && newData.val().length <= 20" },
+            "score": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000" },
+            "$other": { ".validate": false }
+          }
+        },
+
+        "$other": { ".validate": false }
+      }
+    },
+
+    "$other": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}
