@@ -1,7 +1,7 @@
 {
   "rules": {
     "rooms": {
-      ".indexOn": "createdAt",
+      ".indexOn": ["createdAt", "phase"],
       "$roomCode": {
         ".read": true,
         ".write": "auth != null && (!data.exists() || auth.uid == data.child('hostSessionId').val())",
