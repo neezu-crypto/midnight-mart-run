@@ -252,7 +252,7 @@
 
       <div class="howto">
         <p class="howto-title">게임 방법</p>
-        <p><b class="amber-text">주인</b>(방장) — 도둑에게 다가가 <b>스페이스바</b>로 체포한다. 손에 물건이 없으면 오인 체포! 주인이 5초간 사과하며 그 자리에 묶인다. <b>시프트</b>로 순간 대시(쿨다운 10초)를 쓸 수 있다.</p>
+        <p><b class="amber-text">주인</b>(방장) — 도둑에게 다가가 <b>스페이스바</b>로 체포한다. 손에 물건이 없으면 오인 체포! 주인이 5초간 사과하며 그 자리에 묶인다. <b>시프트</b>로 순간 대시(쿨다운 10초)를 쓸 수 있다. <b>숫자 1~4</b>로 이모지도 표시할 수 있다.</p>
         <p><b class="mint-text">도둑</b>(시청자, 최대 3인) — 물건에 닿으면 자동으로 줍고, <b>출구</b>로 나가면 탈출 성공. 단, <b>남은 시간이 15초 이하</b>일 때만 탈출할 수 있다. 위험하면 <b>스페이스바</b>로 소지품을 내려놓고 몸을 가볍게 할 수 있다. 많이 들수록 느려지니 욕심과 안전 사이에서 선택하자. 시야가 좁아 <b>가까이 있을 때만 주인이 보인다.</b> <b>숫자 1~4</b>로 이모지를 표시할 수 있고, 도둑의 이모지는 화면 밖에 있어도 주인에게 방향 표시로 항상 보인다.</p>
         <p>이동은 <b>WASD</b> 또는 <b>방향키</b>. 전원 탈출/체포되거나 제한시간이 끝나면 라운드가 종료되고 정산된다.</p>
       </div>
@@ -409,7 +409,7 @@ const ROLE_EMOJI = {owner:'🕵️', thief:'🥷'};
 const EMOJI_FONT = "'Segoe UI Emoji','Noto Color Emoji','Apple Color Emoji',sans-serif";
 const TILE_SIZE = 40;
 const EMOTE_TEXT = {1:'!?', 2:'ㅋㅋ', 3:'!!', 4:':('};
-const EMOTE_DISPLAY_MS = 2500;
+const EMOTE_DISPLAY_MS = 4000;
 
 // ---------------- session ----------------
 function getSessionId(){
@@ -572,7 +572,7 @@ function enterRoom(code, role, isHost){
   document.getElementById('hud-owner').classList.toggle('hidden', role!=='owner');
   document.getElementById('hud-thief').classList.toggle('hidden', role!=='thief');
   document.getElementById('controls-hint').textContent = role==='owner'
-    ? 'WASD/방향키 이동 · 스페이스 체포 · 시프트 대시(10초 쿨다운)'
+    ? 'WASD/방향키 이동 · 스페이스 체포 · 시프트 대시(10초 쿨다운) · 숫자 1~4 이모지'
     : 'WASD/방향키 이동 · 스페이스 소지품 내려놓기 · 닿으면 자동 줍기 · 출구에서 탈출(남은 시간 15초 이하) · 숫자 1~4 이모지';
   if(!roomListenersAttached){ attachRoomListeners(); roomListenersAttached = true; }
   showScreen('lobby');
@@ -622,7 +622,19 @@ function attachRoomListeners(){
   });
 
   onValue(ref(db, `rooms/${S.code}/emotes`), (snap)=>{
-    S.emotes = snap.val() || {};
+    const data = snap.val() || {};
+    if(S.role === 'owner'){
+      // 도둑의 이모지는 캔버스 밖에 있어도(INPUT-04) 주인이 반드시 알아채도록 토스트로도 알린다
+      Object.entries(data).forEach(([id,e])=>{
+        const p = S.players[id];
+        if(!p || p.role !== 'thief') return;
+        const prev = S.emotes[id];
+        if(!prev || prev.ts !== e.ts){
+          showToast(`${p.nickname} ${EMOTE_TEXT[e.emoteId] || ''}`);
+        }
+      });
+    }
+    S.emotes = data;
   });
 
   onValue(ref(db, `rooms/${S.code}/settlement`), (snap)=>{
@@ -739,7 +751,7 @@ window.addEventListener('keydown', (e)=>{
   }
   const emoteDigitMap = {Digit1:1, Digit2:2, Digit3:3, Digit4:4, Numpad1:1, Numpad2:2, Numpad3:3, Numpad4:4};
   if(emoteDigitMap[e.code]){
-    if(!e.repeat && S.phase === 'playing' && S.role === 'thief') triggerEmote(emoteDigitMap[e.code]);
+    if(!e.repeat && S.phase === 'playing') triggerEmote(emoteDigitMap[e.code]);
   }
 });
 window.addEventListener('keyup', (e)=>{ S.keys[e.code] = false; });
