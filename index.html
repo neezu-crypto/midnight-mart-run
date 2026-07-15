@@ -938,6 +938,7 @@ function render(){
 
   Object.values(S.items).forEach(item=>{
     if(item.state !== 'onFloor') return;
+    if(S.role==='thief' && Math.hypot(item.x-S.local.x, item.y-S.local.y) > THIEF_VISION_RADIUS) return;
     const x = item.x-camX, y = item.y-camY;
     if(x<-16||x>VIEW_W+16||y<-16||y>VIEW_H+16) return;
     drawGlow(x, y, 16, item.tier==='L' ? 'rgba(228,72,61,0.35)' : item.tier==='M' ? 'rgba(79,209,197,0.3)' : 'rgba(245,166,35,0.25)');
@@ -982,6 +983,21 @@ function render(){
 
   if(S.role==='thief'){
     const vsx = S.local.x-camX, vsy = S.local.y-camY;
+
+    // desaturate everything outside the vision radius
+    ctx.save();
+    ctx.setTransform(1,0,0,1,0,0);
+    const dcx = vsx*SCALE, dcy = vsy*SCALE, dr = THIEF_VISION_RADIUS*SCALE;
+    ctx.beginPath();
+    ctx.rect(0,0,canvas.width,canvas.height);
+    ctx.moveTo(dcx+dr, dcy);
+    ctx.arc(dcx, dcy, dr, 0, Math.PI*2, true);
+    ctx.closePath();
+    ctx.clip('evenodd');
+    ctx.filter = 'saturate(0)';
+    ctx.drawImage(canvas, 0, 0);
+    ctx.restore();
+
     ctx.beginPath(); ctx.arc(vsx, vsy, THIEF_VISION_RADIUS, 0, Math.PI*2);
     ctx.strokeStyle = 'rgba(79,209,197,0.25)'; ctx.lineWidth = 1; ctx.stroke();
   }
