@@ -523,7 +523,7 @@ const S = {
   remoteRender:{}, finalizing:false, lastTs:0, localCarryWeight:0, recentlyDropped:{},
   lastCountdownShown:null, settlementSoundPlayed:false,
   lastMoveDir:{x:0,y:1}, dashReadyAt:0, lastExitWarnTs:0, lastArrestResultTs:null,
-  spectateTargetId:null
+  spectateTargetId:null, lastArrestRequestSentAt:null
 };
 
 function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
@@ -662,6 +662,11 @@ function attachRoomListeners(){
     // 체포 판정은 서버(Cloud Function)가 내리므로, 결과가 도착하면 주인 화면에 알린다.
     if(S.role === 'owner' && data.arrestResult && data.arrestResult.ts !== S.lastArrestResultTs){
       S.lastArrestResultTs = data.arrestResult.ts;
+      // 진단용: 스페이스바를 누른 시각부터 서버 판정 결과가 도착한 시각까지 걸린
+      // 왕복 시간을 콘솔에 남긴다(성공/오인 체포 딜레이 차이 확인용, 임시 로그).
+      if(S.lastArrestRequestSentAt){
+        console.log(`[arrest RTT] success=${data.arrestResult.success} roundTripMs=${Date.now()-S.lastArrestRequestSentAt}`);
+      }
       if(data.arrestResult.success){
         showToast(`${data.arrestResult.nickname} 체포됨`);
         sfxArrestSuccess();
@@ -926,6 +931,7 @@ function arrestAttempt(){
   const me = S.players[mySessionId];
   if(!me) return;
   if(me.frozenUntil && Date.now() < me.frozenUntil) return;
+  S.lastArrestRequestSentAt = Date.now(); // 진단용 왕복 시간 측정 시작점(임시 로그)
   update(ref(db, `rooms/${S.code}`), {arrestRequestedAt: Date.now()});
 }
 

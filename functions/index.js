@@ -95,18 +95,31 @@ exports.onArrestRequested = onValueWritten(
     region: REGION,
   },
   async (event) => {
+    // 진단용 타이밍 로그 - 클라이언트가 arrestRequestedAt을 쓴 시각과 이 함수가
+    // 실제로 실행되기 시작한 시각의 차이(전달 지연)와, 함수 내부 처리 시간을
+    // 분리해서 기록한다. 체포 딜레이가 소지품 유무와 무관한지 확인하기 위함.
+    const invokedAt = Date.now();
+    const requestedAt = event.data.after.val();
+    const deliveryDelayMs = typeof requestedAt === 'number' ? invokedAt - requestedAt : null;
+
     const roomId = event.params.roomId;
     const db = getDatabase();
 
     const roomSnap = await db.ref(`rooms/${roomId}`).get();
     const room = roomSnap.val();
-    if (!room || room.phase !== 'playing') return;
+    if (!room || room.phase !== 'playing') {
+      logger.log(`onArrestRequested room=${roomId} skipped: phase=${room && room.phase} deliveryDelayMs=${deliveryDelayMs}`);
+      return;
+    }
 
     const players = room.players || {};
     const ownerId = room.hostSessionId;
     const owner = players[ownerId];
     if (!owner || owner.role !== 'owner') return;
-    if (owner.frozenUntil && Date.now() < owner.frozenUntil) return;
+    if (owner.frozenUntil && Date.now() < owner.frozenUntil) {
+      logger.log(`onArrestRequested room=${roomId} skipped: owner frozen deliveryDelayMs=${deliveryDelayMs}`);
+      return;
+    }
 
     let targetId = null;
     let bestDist = Infinity;
@@ -120,7 +133,10 @@ exports.onArrestRequested = onValueWritten(
         targetId = id;
       }
     });
-    if (!targetId) return; // 근처에 도둑이 없으면 아무 일도 일어나지 않는다
+    if (!targetId) {
+      logger.log(`onArrestRequested room=${roomId} skipped: no target in range deliveryDelayMs=${deliveryDelayMs}`);
+      return;
+    }
 
     const target = players[targetId];
     const updates = {};
@@ -144,7 +160,14 @@ exports.onArrestRequested = onValueWritten(
       success,
       ts: Date.now(),
     };
+    const beforeWriteMs = Date.now();
     await db.ref().update(updates);
+    const afterWriteMs = Date.now();
+    logger.log(
+      `onArrestRequested room=${roomId} success=${success} ` +
+        `deliveryDelayMs=${deliveryDelayMs} processingMs=${beforeWriteMs - invokedAt} ` +
+        `writeMs=${afterWriteMs - beforeWriteMs} totalMs=${afterWriteMs - invokedAt}`
+    );
 
     // 이 체포로 남은 도둑이 전부 비활성화됐을 수 있으니 즉시 종료 조건을 재확인한다.
     // 방장 클라이언트가 뒤늦게 감지하기를(탭이 백그라운드에 있는 등) 기다리지 않아도 된다.
