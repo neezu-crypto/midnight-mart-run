@@ -90,7 +90,7 @@
   }
   .field{margin-bottom:16px;}
   .field label{display:block; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink-dim); margin-bottom:6px; letter-spacing:0.05em;}
-  .field input{
+  .field input, .field select{
     width:100%; padding:10px 12px; background:var(--bg); border:1px solid var(--line);
     border-radius:4px; color:var(--ink); font-size:14px; font-family:'IBM Plex Mono',monospace;
   }
@@ -242,6 +242,13 @@
     <div class="card">
       <div class="room-code" id="lobby-code">------</div>
       <div class="room-code-label">방 코드 · 시청자에게 공유하세요</div>
+
+      <div class="field hidden" id="map-select-wrap">
+        <label>맵 선택</label>
+        <select id="input-map-select"></select>
+      </div>
+      <p class="waiting-msg hidden" id="lobby-map-label"></p>
+
       <ul class="player-list" id="lobby-players"></ul>
 
       <div class="howto">
@@ -318,7 +325,6 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 // ---------------- constants (design doc numbers) ----------------
-const MAP_W = 1600, MAP_H = 1100;
 const VIEW_W = 560, VIEW_H = 400;
 const SCALE = 1.5;
 const PLAYER_RADIUS = 14, ARREST_RADIUS = 50, PICKUP_RADIUS = 22;
@@ -334,19 +340,60 @@ const DASH_COOLDOWN_MS = 10000;
 const SEND_INTERVAL = 100; // ms, 10Hz throttle
 const INTERP_MS = 150;
 
-const OWNER_SPAWNS = [{x:800,y:350},{x:800,y:750},{x:600,y:550},{x:1000,y:550}];
-const THIEF_SPAWNS = [{x:200,y:300},{x:200,y:550},{x:200,y:800}];
-const OBSTACLES = [
-  {x:380,y:150,w:180,h:70,label:'진열대',icon:'🛒'}, {x:380,y:515,w:180,h:70,label:'진열대',icon:'🛒'}, {x:380,y:880,w:180,h:70,label:'창고',icon:'📦'},
-  {x:1040,y:150,w:180,h:70,label:'진열대',icon:'🛒'}, {x:1040,y:515,w:180,h:70,label:'진열대',icon:'🛒'}, {x:1040,y:880,w:180,h:70,label:'창고',icon:'📦'},
-  {x:700,y:500,w:200,h:100,label:'계산대',icon:'💳'}
-];
-const EXITS = [
-  {x:0,y:0,w:140,h:100,label:'정문',type:'main'},
-  {x:MAP_W-100,y:0,w:100,h:90,label:'비상구',type:'side'},
-  {x:0,y:MAP_H-90,w:100,h:90,label:'후문',type:'side'},
-  {x:MAP_W-140,y:MAP_H-110,w:140,h:110,label:'정문',type:'main'}
-];
+// ---------------- maps ----------------
+const MAPS = {
+  classic: {
+    name: '클래식 마트',
+    MAP_W: 1600, MAP_H: 1100,
+    OWNER_SPAWNS: [{x:800,y:350},{x:800,y:750},{x:600,y:550},{x:1000,y:550}],
+    THIEF_SPAWNS: [{x:200,y:300},{x:200,y:550},{x:200,y:800}],
+    OBSTACLES: [
+      {x:380,y:150,w:180,h:70,label:'진열대',icon:'🛒'}, {x:380,y:515,w:180,h:70,label:'진열대',icon:'🛒'}, {x:380,y:880,w:180,h:70,label:'창고',icon:'📦'},
+      {x:1040,y:150,w:180,h:70,label:'진열대',icon:'🛒'}, {x:1040,y:515,w:180,h:70,label:'진열대',icon:'🛒'}, {x:1040,y:880,w:180,h:70,label:'창고',icon:'📦'},
+      {x:700,y:500,w:200,h:100,label:'계산대',icon:'💳'}
+    ],
+    EXITS: (W,H)=>[
+      {x:0,y:0,w:140,h:100,label:'정문',type:'main'},
+      {x:W-100,y:0,w:100,h:90,label:'비상구',type:'side'},
+      {x:0,y:H-90,w:100,h:90,label:'후문',type:'side'},
+      {x:W-140,y:H-110,w:140,h:110,label:'정문',type:'main'}
+    ]
+  },
+  dense: {
+    name: '혼잡한 창고점 (고난도)',
+    MAP_W: 1600, MAP_H: 1100,
+    OWNER_SPAWNS: [{x:800,y:350},{x:800,y:750},{x:600,y:550},{x:1000,y:550}],
+    THIEF_SPAWNS: [{x:200,y:300},{x:200,y:550},{x:200,y:800}],
+    OBSTACLES: [
+      {x:280,y:140,w:150,h:70,label:'진열대',icon:'🛒'}, {x:480,y:140,w:150,h:70,label:'진열대',icon:'🛒'},
+      {x:960,y:140,w:150,h:70,label:'진열대',icon:'🛒'}, {x:1160,y:140,w:150,h:70,label:'창고',icon:'📦'},
+      {x:280,y:330,w:150,h:70,label:'냉동고',icon:'🧊'}, {x:1160,y:330,w:150,h:70,label:'냉동고',icon:'🧊'},
+      {x:700,y:500,w:200,h:100,label:'계산대',icon:'💳'},
+      {x:280,y:480,w:150,h:70,label:'진열대',icon:'🛒'}, {x:1160,y:480,w:150,h:70,label:'진열대',icon:'🛒'},
+      {x:280,y:650,w:150,h:70,label:'진열대',icon:'🛒'}, {x:1160,y:650,w:150,h:70,label:'창고',icon:'📦'},
+      {x:280,y:900,w:150,h:70,label:'진열대',icon:'🛒'}, {x:480,y:900,w:150,h:70,label:'진열대',icon:'🛒'},
+      {x:960,y:900,w:150,h:70,label:'진열대',icon:'🛒'}, {x:1160,y:900,w:150,h:70,label:'냉동고',icon:'🧊'}
+    ],
+    EXITS: (W,H)=>[
+      {x:0,y:0,w:140,h:100,label:'정문',type:'main'},
+      {x:W-100,y:0,w:100,h:90,label:'비상구',type:'side'},
+      {x:0,y:H-90,w:100,h:90,label:'후문',type:'side'},
+      {x:W-140,y:H-110,w:140,h:110,label:'정문',type:'main'}
+    ]
+  }
+};
+const DEFAULT_MAP_ID = 'classic';
+let MAP_W, MAP_H, OWNER_SPAWNS, THIEF_SPAWNS, OBSTACLES, EXITS, currentMapId;
+function applyMap(mapId){
+  const m = MAPS[mapId] ? mapId : DEFAULT_MAP_ID;
+  const def = MAPS[m];
+  currentMapId = m;
+  MAP_W = def.MAP_W; MAP_H = def.MAP_H;
+  OWNER_SPAWNS = def.OWNER_SPAWNS; THIEF_SPAWNS = def.THIEF_SPAWNS;
+  OBSTACLES = def.OBSTACLES; EXITS = def.EXITS(MAP_W, MAP_H);
+}
+applyMap(DEFAULT_MAP_ID);
+
 const TIER_COLOR = {S:'#F5A623', M:'#4FD1C5', L:'#E4483D'};
 const TIER_EMOJI = {S:'🥫', M:'🍾', L:'📺'};
 const ROLE_EMOJI = {owner:'🕵️', thief:'🥷'};
@@ -471,7 +518,7 @@ async function createRoom(){
     if(!snap.exists()) break;
   }
   await set(ref(db, `rooms/${code}`), {
-    code, hostSessionId: mySessionId, phase:'waiting',
+    code, hostSessionId: mySessionId, phase:'waiting', mapId: DEFAULT_MAP_ID,
     timer:{startedAt:0, durationSec:ROUND_DURATION}, ownerSpawnIndex:0
   });
   await set(ref(db, `rooms/${code}/players/${mySessionId}`), {
@@ -526,6 +573,7 @@ function attachRoomListeners(){
     if(!data){ window.location.reload(); return; }
     const prevPhase = S.phase;
     S.phase = data.phase; S.timer = data.timer || S.timer; S.hostSessionId = data.hostSessionId;
+    if(data.mapId && data.mapId !== currentMapId) applyMap(data.mapId);
     document.getElementById('lobby-code').textContent = S.code;
 
     if(data.phase === 'waiting'){
@@ -575,6 +623,16 @@ function updateLobbyUI(){
   });
   document.getElementById('btn-start').classList.toggle('hidden', !S.isHost);
   document.getElementById('lobby-waiting-msg').classList.toggle('hidden', S.isHost);
+
+  document.getElementById('input-map-select').value = currentMapId;
+  document.getElementById('map-select-wrap').classList.toggle('hidden', !S.isHost);
+  document.getElementById('lobby-map-label').classList.toggle('hidden', S.isHost);
+  document.getElementById('lobby-map-label').textContent = `선택된 맵: ${MAPS[currentMapId].name}`;
+}
+function populateMapSelect(){
+  const sel = document.getElementById('input-map-select');
+  sel.innerHTML = Object.entries(MAPS).map(([id,m])=>`<option value="${id}">${m.name}</option>`).join('');
+  sel.value = currentMapId;
 }
 
 // ---------------- host: start / restart round ----------------
@@ -1165,6 +1223,11 @@ document.addEventListener('click', (e)=>{
 });
 buildSoundPanel();
 updateSoundBtnIcon();
+populateMapSelect();
+document.getElementById('input-map-select').addEventListener('change', (e)=>{
+  if(!S.isHost) return;
+  update(ref(db, `rooms/${S.code}`), {mapId: e.target.value});
+});
 
 // ---------------- wire up buttons ----------------
 document.querySelectorAll('.btn').forEach(btn => btn.addEventListener('click', sfxClick));
