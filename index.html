@@ -227,7 +227,7 @@
       <div class="howto">
         <p class="howto-title">게임 방법</p>
         <p><b class="amber-text">주인</b>(방장) — 도둑에게 다가가 <b>스페이스바</b>로 체포한다. 손에 물건이 없으면 오인 체포! 주인이 5초간 사과하며 그 자리에 묶인다. <b>시프트</b>로 순간 대시(쿨다운 10초)를 쓸 수 있다.</p>
-        <p><b class="mint-text">도둑</b>(시청자, 최대 3인) — 물건에 닿으면 자동으로 줍고, <b>출구</b>로 나가면 탈출 성공. 단, <b>남은 시간이 15초 이하</b>일 때만 탈출할 수 있다. 위험하면 <b>스페이스바</b>로 소지품을 내려놓고 몸을 가볍게 할 수 있다. 많이 들수록 느려지니 욕심과 안전 사이에서 선택하자.</p>
+        <p><b class="mint-text">도둑</b>(시청자, 최대 3인) — 물건에 닿으면 자동으로 줍고, <b>출구</b>로 나가면 탈출 성공. 단, <b>남은 시간이 15초 이하</b>일 때만 탈출할 수 있다. 위험하면 <b>스페이스바</b>로 소지품을 내려놓고 몸을 가볍게 할 수 있다. 많이 들수록 느려지니 욕심과 안전 사이에서 선택하자. 시야가 좁아 <b>가까이 있을 때만 주인이 보인다.</b></p>
         <p>이동은 <b>WASD</b> 또는 <b>방향키</b>. 전원 탈출/체포되거나 제한시간이 끝나면 라운드가 종료되고 정산된다.</p>
       </div>
 
@@ -309,6 +309,7 @@ const COUNTDOWN_SEC = 3;
 const APOLOGY_MS = 5000;
 const DROP_PICKUP_COOLDOWN_MS = 3000; // 본인이 내려놓은 물건은 3초 후에 재습득 가능
 const DASH_DISTANCE = 160; // px, 주인 전용 특수스킬
+const THIEF_VISION_RADIUS = DASH_DISTANCE; // 도둑이 주인을 볼 수 있는 반경
 const DASH_COOLDOWN_MS = 10000;
 const SEND_INTERVAL = 100; // ms, 10Hz throttle
 const INTERP_MS = 150;
@@ -951,6 +952,10 @@ function render(){
     let x,y;
     if(id===mySessionId){ x=S.local.x; y=S.local.y; }
     else{ const r=S.remoteRender[id]; if(!r) return; x=r.renderX; y=r.renderY; }
+    if(S.role==='thief' && p.role==='owner' && id!==mySessionId){
+      const dist = Math.hypot(x-S.local.x, y-S.local.y);
+      if(dist > THIEF_VISION_RADIUS) return;
+    }
     const sx=x-camX, sy=y-camY;
     if(sx<-30||sx>VIEW_W+30||sy<-30||sy>VIEW_H+30) return;
 
@@ -974,6 +979,12 @@ function render(){
     ctx.fillText(p.nickname + (isFrozen?' (사과중)':''), sx, sy-PLAYER_RADIUS-8);
     ctx.textAlign='left';
   });
+
+  if(S.role==='thief'){
+    const vsx = S.local.x-camX, vsy = S.local.y-camY;
+    ctx.beginPath(); ctx.arc(vsx, vsy, THIEF_VISION_RADIUS, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(79,209,197,0.25)'; ctx.lineWidth = 1; ctx.stroke();
+  }
 
   // vignette
   const vg = ctx.createRadialGradient(VIEW_W/2,VIEW_H/2,VIEW_H*0.28, VIEW_W/2,VIEW_H/2,VIEW_H*0.72);
