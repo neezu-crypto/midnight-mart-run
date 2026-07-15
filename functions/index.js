@@ -8,6 +8,72 @@ initializeApp();
 
 const DB_INSTANCE = 'midnight-mart-run-24bba-default-rtdb';
 const REGION = 'asia-southeast1';
+const ARREST_RADIUS = 50;
+const APOLOGY_MS = 5000;
+
+// 주인(owner) 클라이언트가 스페이스바를 누르면 arrestRequestedAt만 남기고,
+// "누가 근처에 있는지", "빈손인지"는 서버가 저장된 실제 위치·소지품으로
+// 다시 판정한다. 클라이언트가 자신의 위치/소지품을 위조해 원거리 체포를
+// 유도하거나 회피하는 것을 막기 위함이다.
+exports.onArrestRequested = onValueWritten(
+  {
+    ref: '/rooms/{roomId}/arrestRequestedAt',
+    instance: DB_INSTANCE,
+    region: REGION,
+  },
+  async (event) => {
+    const roomId = event.params.roomId;
+    const db = getDatabase();
+
+    const roomSnap = await db.ref(`rooms/${roomId}`).get();
+    const room = roomSnap.val();
+    if (!room || room.phase !== 'playing') return;
+
+    const players = room.players || {};
+    const ownerId = room.hostSessionId;
+    const owner = players[ownerId];
+    if (!owner || owner.role !== 'owner') return;
+    if (owner.frozenUntil && Date.now() < owner.frozenUntil) return;
+
+    let targetId = null;
+    let bestDist = Infinity;
+    Object.entries(players).forEach(([id, p]) => {
+      if (p.role !== 'thief' || p.status !== 'active') return;
+      const dx = (p.x || 0) - (owner.x || 0);
+      const dy = (p.y || 0) - (owner.y || 0);
+      const d = dx * dx + dy * dy;
+      if (d < ARREST_RADIUS * ARREST_RADIUS && d < bestDist) {
+        bestDist = d;
+        targetId = id;
+      }
+    });
+    if (!targetId) return; // 근처에 도둑이 없으면 아무 일도 일어나지 않는다
+
+    const target = players[targetId];
+    const updates = {};
+    let success;
+    if ((target.carryWeight || 0) > 0) {
+      success = true;
+      updates[`rooms/${roomId}/players/${targetId}/status`] = 'arrested';
+      updates[`rooms/${roomId}/players/${targetId}/carryWeight`] = 0;
+      updates[`rooms/${roomId}/players/${targetId}/carriedItems`] = null;
+      Object.keys(target.carriedItems || {}).forEach((itemId) => {
+        updates[`rooms/${roomId}/items/${itemId}/state`] = 'returned';
+        updates[`rooms/${roomId}/items/${itemId}/carriedBy`] = null;
+      });
+    } else {
+      success = false;
+      updates[`rooms/${roomId}/players/${ownerId}/frozenUntil`] = Date.now() + APOLOGY_MS;
+    }
+    updates[`rooms/${roomId}/arrestResult`] = {
+      targetId,
+      nickname: target.nickname || '???',
+      success,
+      ts: Date.now(),
+    };
+    await db.ref().update(updates);
+  }
+);
 
 // 방장(host) 클라이언트가 라운드 종료 조건을 감지하면 finalizeRequestedAt만 남기고,
 // 실제 정산(누가 탈출/체포됐는지, 점수 계산)은 이 함수가 서버 권한으로 재계산한다.

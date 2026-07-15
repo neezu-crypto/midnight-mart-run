@@ -4,14 +4,14 @@
       ".indexOn": "createdAt",
       "$roomCode": {
         ".read": true,
-        ".write": true,
+        ".write": "auth != null && (!data.exists() || auth.uid == data.child('hostSessionId').val())",
         ".validate": "$roomCode.matches(/^[A-Z0-9]{6}$/) && newData.hasChildren(['code','phase'])",
 
         "code": {
           ".validate": "newData.isString() && newData.val() == $roomCode"
         },
         "hostSessionId": {
-          ".validate": "newData.isString() && newData.val().length <= 100"
+          ".validate": "newData.isString() && newData.val().length <= 100 && newData.val() == auth.uid"
         },
         "phase": {
           ".validate": "newData.val() == 'waiting' || newData.val() == 'countdown' || newData.val() == 'playing'"
@@ -31,6 +31,12 @@
         "finalizeRequestedAt": {
           ".validate": "newData.isNumber() && (!data.exists() || newData.val() - data.val() >= 3000)"
         },
+        "arrestRequestedAt": {
+          ".validate": "newData.isNumber() && (!data.exists() || newData.val() - data.val() >= 400)"
+        },
+        "arrestResult": {
+          ".write": false
+        },
 
         "timer": {
           "startedAt": { ".validate": "newData.isNumber()" },
@@ -40,11 +46,12 @@
 
         "players": {
           "$sessionId": {
+            ".write": "auth != null && (auth.uid == $sessionId || auth.uid == root.child('rooms').child($roomCode).child('hostSessionId').val())",
             ".validate": "newData.hasChildren(['nickname','role'])",
             "nickname": { ".validate": "newData.isString() && newData.val().length <= 20" },
             "role": { ".validate": "newData.val() == 'owner' || newData.val() == 'thief'" },
-            "x": { ".validate": "newData.isNumber() && newData.val() >= -50 && newData.val() <= 1700" },
-            "y": { ".validate": "newData.isNumber() && newData.val() >= -50 && newData.val() <= 1200" },
+            "x": { ".validate": "newData.isNumber() && newData.val() >= -50 && newData.val() <= 1700 && (root.child('rooms').child($roomCode).child('phase').val() != 'playing' || !data.exists() || ((newData.val() - data.val()) <= 400 && (data.val() - newData.val()) <= 400))" },
+            "y": { ".validate": "newData.isNumber() && newData.val() >= -50 && newData.val() <= 1200 && (root.child('rooms').child($roomCode).child('phase').val() != 'playing' || !data.exists() || ((newData.val() - data.val()) <= 400 && (data.val() - newData.val()) <= 400))" },
             "carryWeight": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
             "carriedItems": {
               "$itemId": { ".validate": "newData.isBoolean()" }
@@ -58,13 +65,14 @@
 
         "items": {
           "$itemId": {
+            ".write": "auth != null",
             "x": { ".validate": "newData.isNumber() && newData.val() >= -50 && newData.val() <= 1700" },
             "y": { ".validate": "newData.isNumber() && newData.val() >= -50 && newData.val() <= 1200" },
             "tier": { ".validate": "newData.val() == 'S' || newData.val() == 'M' || newData.val() == 'L'" },
             "value": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
             "weight": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
             "state": { ".validate": "newData.val() == 'onFloor' || newData.val() == 'carried' || newData.val() == 'returned'" },
-            "carriedBy": { ".validate": "newData.isString() || newData.val() == null" },
+            "carriedBy": { ".validate": "newData.val() == null || newData.val() == auth.uid" },
             "$other": { ".validate": false }
           }
         },
@@ -75,6 +83,7 @@
 
         "emotes": {
           "$sessionId": {
+            ".write": "auth != null && auth.uid == $sessionId",
             "emoteId": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 4" },
             "ts": { ".validate": "newData.isNumber() && (!data.exists() || newData.val() - data.val() >= 700)" },
             "$other": { ".validate": false }

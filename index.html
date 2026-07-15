@@ -308,8 +308,11 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
 import {
-  getDatabase, ref, set, get, update, remove, onValue, onDisconnect, runTransaction
+  getDatabase, ref, set, get, update, remove, onValue, onDisconnect
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js";
+import {
+  getAuth, signInAnonymously, onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBZwyUdFRGcmfNVoA8GVNy2zXieSJ96yAI",
@@ -322,11 +325,12 @@ const firebaseConfig = {
 };
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
+const auth = getAuth(app);
 
 // ---------------- constants (design doc numbers) ----------------
 const VIEW_W = 560, VIEW_H = 400;
 const SCALE = 1.5;
-const PLAYER_RADIUS = 14, ARREST_RADIUS = 50, PICKUP_RADIUS = 22;
+const PLAYER_RADIUS = 14, PICKUP_RADIUS = 22;
 const BASE_SPEED = 130; // px/s (기존 260에서 -50%)
 const ROUND_DURATION = 90; // sec, placeholder — 다음 단계에서 밸런스 조정
 const ESCAPE_WINDOW_SEC = 15; // 남은 시간이 이 값 이하일 때만 탈출 가능
@@ -411,13 +415,24 @@ const TILE_SIZE = 40;
 const EMOTE_TEXT = {1:'!?', 2:'ㅋㅋ', 3:'!!', 4:':('};
 const EMOTE_DISPLAY_MS = 2000;
 
-// ---------------- session ----------------
-function getSessionId(){
-  let id = localStorage.getItem('mmr_session_id');
-  if(!id){ id = crypto.randomUUID(); localStorage.setItem('mmr_session_id', id); }
-  return id;
-}
-const mySessionId = getSessionId();
+// ---------------- session (Firebase 익명 인증) ----------------
+// 세션 id를 브라우저가 자체 발급하는 localStorage UUID 대신 Firebase 익명 인증의
+// auth.uid로 사용한다. RTDB 규칙이 "auth.uid === $sessionId"를 강제할 수 있게 되어,
+// 다른 사람의 세션인 척 위치/상태/이모지를 대신 쓰는 위조를 서버 차원에서 막는다.
+let mySessionId = null;
+document.getElementById('btn-create').disabled = true;
+document.getElementById('btn-join').disabled = true;
+
+signInAnonymously(auth).catch((err)=>{
+  console.error('anonymous sign-in failed', err);
+  alert('로그인에 실패했습니다. 새로고침 후 다시 시도해주세요.');
+});
+onAuthStateChanged(auth, (user)=>{
+  if(!user) return;
+  mySessionId = user.uid;
+  document.getElementById('btn-create').disabled = false;
+  document.getElementById('btn-join').disabled = false;
+});
 
 // ---------------- sound (Web Audio, no external asset files) ----------------
 const SOUND_CATEGORIES = {
@@ -485,7 +500,7 @@ const S = {
   local:{x:800,y:550}, localRender:{x:800,y:550}, dashAnim:null, keys:{}, wasMoving:false, lastSendTs:0,
   remoteRender:{}, finalizing:false, lastTs:0, localCarryWeight:0, recentlyDropped:{},
   lastCountdownShown:null, settlementSoundPlayed:false,
-  lastMoveDir:{x:0,y:1}, dashReadyAt:0, lastExitWarnTs:0
+  lastMoveDir:{x:0,y:1}, dashReadyAt:0, lastExitWarnTs:0, lastArrestResultTs:null
 };
 
 function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
@@ -549,33 +564,25 @@ async function joinRoom(){
   const room = snap.val();
   if(room.phase !== 'waiting'){ alert('이미 라운드가 진행 중입니다. 잠시 후 다시 시도하세요.'); return; }
 
-  // 정원(최대 3인) 체크와 등록을 트랜잭션으로 묶어, 여러 명이 동시에 입장을 시도해도
-  // 정원을 초과해 등록되는 경쟁 상태(race condition)가 생기지 않게 한다.
-  let joinError = null;
-  const result = await runTransaction(ref(db, `rooms/${code}/players`), (players)=>{
-    joinError = null;
-    players = players || {};
-    const existing = players[mySessionId];
-    if(existing && existing.role !== 'thief'){ joinError = 'role-conflict'; return; }
-    if(existing && existing.role === 'thief') return players;
-    const thiefCount = Object.values(players).filter(p=>p && p.role==='thief').length;
-    if(thiefCount >= 3){ joinError = 'full'; return; }
-    players[mySessionId] = {
-      nickname, role:'thief', x:0, y:0,
-      carryWeight:0, carriedItems:null, status:'active', connected:true
-    };
-    return players;
-  });
-
-  if(joinError === 'role-conflict'){
+  // 참고: 정원(최대 3인) 체크는 클라이언트에서 읽은 스냅샷 기준이라 동시 입장 시
+  // 아주 드물게 정원을 1명 넘겨 등록될 수 있다(경쟁 상태). players 노드 전체를
+  // 트랜잭션으로 묶는 방식은 세션별 auth.uid 소유권 검증 규칙과 충돌해(다른 사람의
+  // 기존 항목까지 함께 재검증되어 거부됨) 포기하고, 이 정도 희박한 경쟁 상태는
+  // 감수하기로 한다.
+  const playersSnap = await get(ref(db, `rooms/${code}/players`));
+  const players = playersSnap.val() || {};
+  const thiefCount = Object.values(players).filter(p=>p.role==='thief').length;
+  if(thiefCount >= 3){ alert('정원이 가득 찼습니다 (최대 3인).'); return; }
+  const existing = players[mySessionId];
+  if(existing && existing.role !== 'thief'){
     alert('이 브라우저는 이미 이 방에 다른 역할로 참여 중입니다 (같은 브라우저의 다른 탭에서 방을 만들지 않았는지 확인해주세요). 도둑으로 입장하려면 다른 브라우저나 시크릿 창을 사용하세요.');
     return;
   }
-  if(!result.committed || joinError === 'full'){
-    alert('정원이 가득 찼습니다 (최대 3인).');
-    return;
-  }
 
+  await set(ref(db, `rooms/${code}/players/${mySessionId}`), {
+    nickname, role:'thief', x:0, y:0,
+    carryWeight:0, carriedItems:null, status:'active', connected:true
+  });
   onDisconnect(ref(db, `rooms/${code}/players/${mySessionId}`)).remove();
   enterRoom(code, 'thief', false);
 }
@@ -622,6 +629,18 @@ function attachRoomListeners(){
       if(data.phase === 'settled'){
         renderSettlement();
         if(!S.settlementSoundPlayed){ S.settlementSoundPlayed = true; sfxSettlement(); }
+      }
+    }
+
+    // 체포 판정은 서버(Cloud Function)가 내리므로, 결과가 도착하면 주인 화면에 알린다.
+    if(S.role === 'owner' && data.arrestResult && data.arrestResult.ts !== S.lastArrestResultTs){
+      S.lastArrestResultTs = data.arrestResult.ts;
+      if(data.arrestResult.success){
+        showToast(`${data.arrestResult.nickname} 체포됨`);
+        sfxArrestSuccess();
+      } else {
+        showToast(`${data.arrestResult.nickname}은(는) 빈손이었다... 오인 체포! 사과하는 중 (5초)`);
+        sfxWrongArrest();
       }
     }
   });
@@ -722,6 +741,7 @@ async function hostStartRound(){
   updates[`rooms/${S.code}/timer`] = {startedAt: Date.now(), durationSec: ROUND_DURATION};
   updates[`rooms/${S.code}/items`] = items;
   updates[`rooms/${S.code}/finalizeRequestedAt`] = null;
+  updates[`rooms/${S.code}/arrestRequestedAt`] = null;
 
   Object.keys(S.players).forEach(id=>{
     const p = S.players[id];
@@ -871,35 +891,15 @@ function dropItems(){
   sfxDrop();
 }
 
+// 체포 판정은 더 이상 여기서 확정하지 않는다 - 근접한 도둑이 있는지, 빈손인지 여부를
+// 클라이언트가 그대로 믿으면 REST로 직접 위조된 위치/소지품을 근거로 부당 체포/누명이
+// 가능해지므로, 요청만 보내고 실제 판정은 Cloud Function(onArrestRequested)이
+// 서버가 가진 실제 위치·소지품 상태를 다시 읽어 내린다.
 function arrestAttempt(){
   const me = S.players[mySessionId];
   if(!me) return;
   if(me.frozenUntil && Date.now() < me.frozenUntil) return;
-  let target = null, targetId = null, bestDist = Infinity;
-  Object.entries(S.players).forEach(([id,p])=>{
-    if(p.role !== 'thief' || p.status !== 'active') return;
-    const dx = p.x - S.local.x, dy = p.y - S.local.y;
-    const d = dx*dx+dy*dy;
-    if(d < ARREST_RADIUS*ARREST_RADIUS && d < bestDist){ bestDist=d; target=p; targetId=id; }
-  });
-  if(!target){ return; }
-  if(target.carryWeight > 0){
-    const updates = {};
-    updates[`rooms/${S.code}/players/${targetId}/status`] = 'arrested';
-    updates[`rooms/${S.code}/players/${targetId}/carryWeight`] = 0;
-    updates[`rooms/${S.code}/players/${targetId}/carriedItems`] = null;
-    Object.keys(target.carriedItems || {}).forEach(itemId=>{
-      updates[`rooms/${S.code}/items/${itemId}/state`] = 'returned';
-      updates[`rooms/${S.code}/items/${itemId}/carriedBy`] = null;
-    });
-    update(ref(db), updates);
-    showToast(`${target.nickname} 체포됨`);
-    sfxArrestSuccess();
-  } else {
-    update(ref(db, `rooms/${S.code}/players/${mySessionId}`), {frozenUntil: Date.now()+APOLOGY_MS});
-    showToast(`${target.nickname}은(는) 빈손이었다... 오인 체포! 사과하는 중 (5초)`);
-    sfxWrongArrest();
-  }
+  update(ref(db, `rooms/${S.code}`), {arrestRequestedAt: Date.now()});
 }
 
 function dashAttempt(){
