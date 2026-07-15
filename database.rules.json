@@ -67,6 +67,14 @@
           }
         },
 
+        "emotes": {
+          "$sessionId": {
+            "emoteId": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 4" },
+            "ts": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        },
+
         "$other": { ".validate": false }
       }
     },

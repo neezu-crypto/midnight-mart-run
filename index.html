@@ -253,7 +253,7 @@
       <div class="howto">
         <p class="howto-title">게임 방법</p>
         <p><b class="amber-text">주인</b>(방장) — 도둑에게 다가가 <b>스페이스바</b>로 체포한다. 손에 물건이 없으면 오인 체포! 주인이 5초간 사과하며 그 자리에 묶인다. <b>시프트</b>로 순간 대시(쿨다운 10초)를 쓸 수 있다.</p>
-        <p><b class="mint-text">도둑</b>(시청자, 최대 3인) — 물건에 닿으면 자동으로 줍고, <b>출구</b>로 나가면 탈출 성공. 단, <b>남은 시간이 15초 이하</b>일 때만 탈출할 수 있다. 위험하면 <b>스페이스바</b>로 소지품을 내려놓고 몸을 가볍게 할 수 있다. 많이 들수록 느려지니 욕심과 안전 사이에서 선택하자. 시야가 좁아 <b>가까이 있을 때만 주인이 보인다.</b></p>
+        <p><b class="mint-text">도둑</b>(시청자, 최대 3인) — 물건에 닿으면 자동으로 줍고, <b>출구</b>로 나가면 탈출 성공. 단, <b>남은 시간이 15초 이하</b>일 때만 탈출할 수 있다. 위험하면 <b>스페이스바</b>로 소지품을 내려놓고 몸을 가볍게 할 수 있다. 많이 들수록 느려지니 욕심과 안전 사이에서 선택하자. 시야가 좁아 <b>가까이 있을 때만 주인이 보인다.</b> <b>숫자 1~4</b>로 이모지를 표시할 수 있고, 도둑의 이모지는 화면 밖에 있어도 주인에게 방향 표시로 항상 보인다.</p>
         <p>이동은 <b>WASD</b> 또는 <b>방향키</b>. 전원 탈출/체포되거나 제한시간이 끝나면 라운드가 종료되고 정산된다.</p>
       </div>
 
@@ -408,6 +408,8 @@ const TIER_EMOJI = {S:'🥫', M:'🍾', L:'📺'};
 const ROLE_EMOJI = {owner:'🕵️', thief:'🥷'};
 const EMOJI_FONT = "'Segoe UI Emoji','Noto Color Emoji','Apple Color Emoji',sans-serif";
 const TILE_SIZE = 40;
+const EMOTE_TEXT = {1:'!?', 2:'ㅋㅋ', 3:'!!', 4:':('};
+const EMOTE_DISPLAY_MS = 2500;
 
 // ---------------- session ----------------
 function getSessionId(){
@@ -479,7 +481,7 @@ function sfxDash(){ playTone(700,0.05,'sawtooth','action'); playTone(1000,0.07,'
 const S = {
   code:null, role:null, isHost:false,
   phase:'waiting', timer:{startedAt:0,durationSec:ROUND_DURATION}, hostSessionId:null,
-  players:{}, items:{}, settlement:{},
+  players:{}, items:{}, settlement:{}, emotes:{},
   local:{x:800,y:550}, localRender:{x:800,y:550}, dashAnim:null, keys:{}, wasMoving:false, lastSendTs:0,
   remoteRender:{}, finalizing:false, lastTs:0, localCarryWeight:0, recentlyDropped:{},
   lastCountdownShown:null, settlementSoundPlayed:false,
@@ -571,7 +573,7 @@ function enterRoom(code, role, isHost){
   document.getElementById('hud-thief').classList.toggle('hidden', role!=='thief');
   document.getElementById('controls-hint').textContent = role==='owner'
     ? 'WASD/방향키 이동 · 스페이스 체포 · 시프트 대시(10초 쿨다운)'
-    : 'WASD/방향키 이동 · 스페이스 소지품 내려놓기 · 닿으면 자동 줍기 · 출구에서 탈출(남은 시간 15초 이하)';
+    : 'WASD/방향키 이동 · 스페이스 소지품 내려놓기 · 닿으면 자동 줍기 · 출구에서 탈출(남은 시간 15초 이하) · 숫자 1~4 이모지';
   if(!roomListenersAttached){ attachRoomListeners(); roomListenersAttached = true; }
   showScreen('lobby');
 }
@@ -617,6 +619,10 @@ function attachRoomListeners(){
 
   onValue(ref(db, `rooms/${S.code}/items`), (snap)=>{
     S.items = snap.val() || {};
+  });
+
+  onValue(ref(db, `rooms/${S.code}/emotes`), (snap)=>{
+    S.emotes = snap.val() || {};
   });
 
   onValue(ref(db, `rooms/${S.code}/settlement`), (snap)=>{
@@ -730,6 +736,10 @@ window.addEventListener('keydown', (e)=>{
   }
   if(e.code === 'ShiftLeft' || e.code === 'ShiftRight'){
     if(!e.repeat && S.phase === 'playing' && S.role === 'owner') dashAttempt();
+  }
+  const emoteDigitMap = {Digit1:1, Digit2:2, Digit3:3, Digit4:4, Numpad1:1, Numpad2:2, Numpad3:3, Numpad4:4};
+  if(emoteDigitMap[e.code]){
+    if(!e.repeat && S.phase === 'playing' && S.role === 'thief') triggerEmote(emoteDigitMap[e.code]);
   }
 });
 window.addEventListener('keyup', (e)=>{ S.keys[e.code] = false; });
@@ -893,6 +903,11 @@ function dashAttempt(){
   showToast('대시!');
 }
 
+function triggerEmote(emoteId){
+  update(ref(db, `rooms/${S.code}/emotes/${mySessionId}`), {emoteId, ts:Date.now()});
+  sfxClick();
+}
+
 async function checkRoundEndAndFinalize(){
   if(!S.isHost || S.finalizing) return;
   const thieves = Object.entries(S.players).filter(([,p])=>p.role==='thief');
@@ -1007,6 +1022,33 @@ function drawGlow(sx, sy, radius, color){
   ctx.beginPath(); ctx.arc(sx,sy,radius,0,Math.PI*2); ctx.fill();
 }
 
+function drawEmoteBubble(cx, cy, text){
+  ctx.save();
+  ctx.font = "bold 12px 'IBM Plex Mono', monospace";
+  const padX = 8, h = 20;
+  const w = ctx.measureText(text).width + padX*2;
+  const bx = cx - w/2, by = cy - h;
+  ctx.fillStyle = 'rgba(245,166,35,0.95)';
+  ctx.beginPath();
+  ctx.roundRect(bx, by, w, h, 5);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(12,14,19,0.6)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = '#1a1400';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, cx, by+h/2+1);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
+// 도둑의 이모지는 화면 밖에 있어도 방향 표시로 보여준다(INPUT-04)
+function drawEmoteEdgeIndicator(sx, sy, text){
+  const margin = 26;
+  const cx = VIEW_W/2, cy = VIEW_H/2;
+  const dx = sx-cx || 1e-6, dy = sy-cy || 1e-6;
+  const s = Math.min((VIEW_W/2-margin)/Math.abs(dx), (VIEW_H/2-margin)/Math.abs(dy));
+  drawEmoteBubble(cx+dx*s, cy+dy*s+10, text);
+}
+
 function render(){
   ctx.save();
   ctx.scale(SCALE, SCALE);
@@ -1095,7 +1137,26 @@ function render(){
     ctx.fillStyle = '#FFFFFF';
     ctx.fillText(p.nickname + (isFrozen?' (사과중)':''), sx, sy-PLAYER_RADIUS-8);
     ctx.textAlign='left';
+
+    const emote = S.emotes[id];
+    if(emote && Date.now()-emote.ts < EMOTE_DISPLAY_MS){
+      drawEmoteBubble(sx, sy-PLAYER_RADIUS-22, EMOTE_TEXT[emote.emoteId]);
+    }
   });
+
+  // 도둑의 이모지는 주인 화면 밖에 있어도 방향 표시로 항상 노출된다(INPUT-04)
+  if(S.role === 'owner'){
+    Object.entries(S.players).forEach(([id,p])=>{
+      if(p.role !== 'thief' || p.status !== 'active') return;
+      const emote = S.emotes[id];
+      if(!emote || Date.now()-emote.ts >= EMOTE_DISPLAY_MS) return;
+      const r = S.remoteRender[id];
+      if(!r) return;
+      const sx = r.renderX-camX, sy = r.renderY-camY;
+      const onScreen = sx>-30 && sx<VIEW_W+30 && sy>-30 && sy<VIEW_H+30;
+      if(!onScreen) drawEmoteEdgeIndicator(sx, sy, EMOTE_TEXT[emote.emoteId]);
+    });
+  }
 
   if(S.role==='thief'){
     const vsx = S.localRender.x-camX, vsy = S.localRender.y-camY;
