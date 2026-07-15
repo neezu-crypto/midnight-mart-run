@@ -383,11 +383,15 @@ const MAPS = {
       {x:W-100,y:0,w:100,h:90,label:'비상구',type:'side'},
       {x:0,y:H-90,w:100,h:90,label:'후문',type:'side'},
       {x:W-140,y:H-110,w:140,h:110,label:'정문',type:'main'}
-    ]
+    ],
+    // ㅁ자 안쪽 마당 영역 — 물건 스폰을 이 구역에 더 몰아준다
+    INNER_ZONE: {x:460,y:310,w:680,h:480},
+    INNER_SPAWN_RATIO: 0.75
   }
 };
 const DEFAULT_MAP_ID = 'classic';
 let MAP_W, MAP_H, OWNER_SPAWNS, THIEF_SPAWNS, OBSTACLES, EXITS, currentMapId;
+let INNER_ZONE, INNER_SPAWN_RATIO;
 function applyMap(mapId){
   const m = MAPS[mapId] ? mapId : DEFAULT_MAP_ID;
   const def = MAPS[m];
@@ -395,6 +399,7 @@ function applyMap(mapId){
   MAP_W = def.MAP_W; MAP_H = def.MAP_H;
   OWNER_SPAWNS = def.OWNER_SPAWNS; THIEF_SPAWNS = def.THIEF_SPAWNS;
   OBSTACLES = def.OBSTACLES; EXITS = def.EXITS(MAP_W, MAP_H);
+  INNER_ZONE = def.INNER_ZONE || null; INNER_SPAWN_RATIO = def.INNER_SPAWN_RATIO || 0;
 }
 applyMap(DEFAULT_MAP_ID);
 
@@ -653,7 +658,8 @@ function generateItems(){
   ];
   specs.forEach(spec=>{
     for(let i=0;i<spec.count;i++){
-      const pos = randomFreePosition();
+      const preferInner = INNER_ZONE && Math.random() < INNER_SPAWN_RATIO;
+      const pos = randomFreePosition(preferInner);
       items['i'+(idx++)] = {
         x:pos.x, y:pos.y, tier:spec.tier,
         value:randInt(spec.valMin, spec.valMax), weight:randInt(spec.wMin, spec.wMax),
@@ -663,11 +669,19 @@ function generateItems(){
   });
   return items;
 }
-function randomFreePosition(){
+function randomFreePosition(preferInner){
   const rects = [...OBSTACLES, ...EXITS];
+  const isFree = (x,y) => !rects.some(r => x>r.x-20 && x<r.x+r.w+20 && y>r.y-20 && y<r.y+r.h+20);
+  if(preferInner && INNER_ZONE){
+    for(let i=0;i<40;i++){
+      const x = randInt(INNER_ZONE.x+30, INNER_ZONE.x+INNER_ZONE.w-30);
+      const y = randInt(INNER_ZONE.y+30, INNER_ZONE.y+INNER_ZONE.h-30);
+      if(isFree(x,y)) return {x,y};
+    }
+  }
   for(let i=0;i<40;i++){
     const x = randInt(50, MAP_W-50), y = randInt(50, MAP_H-50);
-    if(!rects.some(r => x>r.x-20 && x<r.x+r.w+20 && y>r.y-20 && y<r.y+r.h+20)) return {x,y};
+    if(isFree(x,y)) return {x,y};
   }
   return {x:800,y:550};
 }
