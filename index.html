@@ -227,7 +227,7 @@
       <div class="howto">
         <p class="howto-title">게임 방법</p>
         <p><b class="amber-text">주인</b>(방장) — 도둑에게 다가가 <b>스페이스바</b>로 체포한다. 손에 물건이 없으면 오인 체포! 주인이 5초간 사과하며 그 자리에 묶인다. <b>시프트</b>로 순간 대시(쿨다운 10초)를 쓸 수 있다.</p>
-        <p><b class="mint-text">도둑</b>(시청자, 최대 3인) — 물건에 닿으면 자동으로 줍고, <b>출구</b>로 나가면 탈출 성공. 단, 게임 시간이 <b>절반 이상 지나야</b> 탈출할 수 있다. 위험하면 <b>스페이스바</b>로 소지품을 내려놓고 몸을 가볍게 할 수 있다. 많이 들수록 느려지니 욕심과 안전 사이에서 선택하자.</p>
+        <p><b class="mint-text">도둑</b>(시청자, 최대 3인) — 물건에 닿으면 자동으로 줍고, <b>출구</b>로 나가면 탈출 성공. 단, <b>남은 시간이 15초 이하</b>일 때만 탈출할 수 있다. 위험하면 <b>스페이스바</b>로 소지품을 내려놓고 몸을 가볍게 할 수 있다. 많이 들수록 느려지니 욕심과 안전 사이에서 선택하자.</p>
         <p>이동은 <b>WASD</b> 또는 <b>방향키</b>. 전원 탈출/체포되거나 제한시간이 끝나면 라운드가 종료되고 정산된다.</p>
       </div>
 
@@ -304,6 +304,7 @@ const SCALE = 1.5;
 const PLAYER_RADIUS = 14, ARREST_RADIUS = 50, PICKUP_RADIUS = 22;
 const BASE_SPEED = 130; // px/s (기존 260에서 -50%)
 const ROUND_DURATION = 90; // sec, placeholder — 다음 단계에서 밸런스 조정
+const ESCAPE_WINDOW_SEC = 15; // 남은 시간이 이 값 이하일 때만 탈출 가능
 const COUNTDOWN_SEC = 3;
 const APOLOGY_MS = 5000;
 const DROP_PICKUP_COOLDOWN_MS = 3000; // 본인이 내려놓은 물건은 3초 후에 재습득 가능
@@ -668,14 +669,14 @@ function updateLocalMovement(dt){
       const inExit = EXITS.some(ex => S.local.x>ex.x && S.local.x<ex.x+ex.w && S.local.y>ex.y && S.local.y<ex.y+ex.h);
       if(inExit){
         const elapsed = (Date.now() - S.timer.startedAt)/1000;
-        if(elapsed >= S.timer.durationSec/2){
+        const remainSec = S.timer.durationSec - elapsed;
+        if(remainSec <= ESCAPE_WINDOW_SEC){
           update(ref(db, `rooms/${S.code}/players/${mySessionId}`), {
             status:'escaped', x:Math.round(S.local.x), y:Math.round(S.local.y)
           });
           sfxEscape();
         } else if(now - S.lastExitWarnTs > 1500){
-          const remainSec = Math.ceil(S.timer.durationSec/2 - elapsed);
-          showToast(`아직 탈출할 수 없다! ${remainSec}초 후부터 탈출 가능`);
+          showToast(`아직 탈출할 수 없다! 남은 시간 ${Math.ceil(remainSec-ESCAPE_WINDOW_SEC)}초 후부터 탈출 가능`);
           S.lastExitWarnTs = now;
         }
       }
