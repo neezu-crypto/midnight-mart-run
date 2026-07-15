@@ -292,7 +292,7 @@
         </div>
       </div>
 
-      <div class="controls-hint">WASD/방향키 이동 · 스페이스 체포(주인) / 소지품 내려놓기(도둑) · 시프트 대시(주인, 10초 쿨다운) · 도둑은 닿으면 자동 줍기</div>
+      <div class="controls-hint" id="controls-hint"></div>
     </div>
   </div>
 
@@ -513,6 +513,9 @@ function enterRoom(code, role, isHost){
   S.code = code; S.role = role; S.isHost = isHost;
   document.getElementById('hud-owner').classList.toggle('hidden', role!=='owner');
   document.getElementById('hud-thief').classList.toggle('hidden', role!=='thief');
+  document.getElementById('controls-hint').textContent = role==='owner'
+    ? 'WASD/방향키 이동 · 스페이스 체포 · 시프트 대시(10초 쿨다운)'
+    : 'WASD/방향키 이동 · 스페이스 소지품 내려놓기 · 닿으면 자동 줍기 · 출구에서 탈출(남은 시간 15초 이하)';
   if(!roomListenersAttached){ attachRoomListeners(); roomListenersAttached = true; }
   showScreen('lobby');
 }
