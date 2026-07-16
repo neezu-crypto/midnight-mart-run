@@ -186,9 +186,6 @@
     padding:26px 22px 20px; box-shadow:0 20px 50px rgba(0,0,0,0.45);
   }
   .receipt h4{text-align:center; font-size:14px; letter-spacing:0.14em; margin-bottom:14px;}
-  .receipt-winner{text-align:center; font-size:15px; font-weight:700; letter-spacing:0.04em; margin:-4px 0 14px; padding:8px; border:1px solid #1a1a1a;}
-  .receipt-winner.owner-win{background:#f0b429; color:#1a1a1a;}
-  .receipt-winner.thief-win{background:#2fb787; color:#0c1013;}
   .receipt-line{display:flex; justify-content:space-between; font-size:12px; padding:5px 0; border-bottom:1px dotted #b7b2a0;}
   .receipt-line.total{border-bottom:none; border-top:1px solid #1a1a1a; margin-top:8px; padding-top:10px; font-size:13px; font-weight:700;}
   .receipt-actions{margin-top:18px; display:flex; gap:8px;}
@@ -311,7 +308,6 @@
       <div id="settlement-overlay" class="hidden">
         <div class="receipt">
           <h4>MIDNIGHT MART · SETTLEMENT</h4>
-          <div id="receipt-winner" class="receipt-winner"></div>
           <div id="receipt-lines"></div>
           <div class="receipt-actions">
             <button class="btn primary hidden" id="btn-restart" style="flex:1;">다시하기</button>
@@ -1087,12 +1083,6 @@ function renderSettlement(){
     total.append(rankLabel, winnerName);
     lines.appendChild(total);
   }
-
-  const thiefWin = rows.some(r=>r.result === 'escaped');
-  const winnerEl = document.getElementById('receipt-winner');
-  winnerEl.textContent = thiefWin ? '🏃 도둑 진영 승리!' : '🏆 주인 승리!';
-  winnerEl.classList.toggle('thief-win', thiefWin);
-  winnerEl.classList.toggle('owner-win', !thiefWin);
 
   document.getElementById('settlement-overlay').classList.remove('hidden');
   document.getElementById('btn-restart').classList.toggle('hidden', !S.isHost);
