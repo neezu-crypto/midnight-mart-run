@@ -479,11 +479,58 @@ const MAPS = {
     // "노출을 감수하고 중앙까지 갈 것인가"를 매 라운드 선택하게 한다.
     INNER_ZONE: {x:450,y:450,w:250,h:250},
     INNER_SPAWN_RATIO: 0.4
+  },
+  market: {
+    name: '전통시장 골목 (일자형 복도)',
+    // 가로로 매우 긴 일자 복도. 위/아래 벽을 따라 좌판 6개씩(총 12개)이
+    // 나란히 늘어서 있고, 중앙 통로(y:120~380)로만 이동할 수 있다.
+    // 출구는 다른 맵과 달리 복도 양 끝 두 곳뿐이라(정문/정문), 도둑은 반드시
+    // 좌판이 늘어선 통로 한복판을 뚫고 반대편까지 이동해야 탈출할 수 있다.
+    MAP_W: 1650, MAP_H: 500,
+    OWNER_SPAWNS: [{x:550,y:250},{x:1100,y:250},{x:825,y:180},{x:825,y:320}],
+    THIEF_SPAWNS: [{x:150,y:180},{x:150,y:320},{x:1500,y:180},{x:1500,y:320}],
+    OBSTACLES: [
+      // 윗줄 좌판 6개
+      {x:150, y:0,w:190,h:120,label:'야채가게',icon:'🥬'},
+      {x:380, y:0,w:190,h:120,label:'과일가게',icon:'🍎'},
+      {x:610, y:0,w:190,h:120,label:'정육점',  icon:'🥩'},
+      {x:840, y:0,w:190,h:120,label:'생선가게',icon:'🐟'},
+      {x:1070,y:0,w:190,h:120,label:'잡화점',  icon:'🧺'},
+      {x:1300,y:0,w:190,h:120,label:'방앗간',  icon:'🌾'},
+      // 아랫줄 좌판 6개
+      {x:150, y:380,w:190,h:120,label:'반찬가게',icon:'🍚'},
+      {x:380, y:380,w:190,h:120,label:'떡집',    icon:'🍡'},
+      {x:610, y:380,w:190,h:120,label:'건어물',  icon:'🦑'},
+      {x:840, y:380,w:190,h:120,label:'옷가게',  icon:'👕'},
+      {x:1070,y:380,w:190,h:120,label:'꽃집',    icon:'💐'},
+      {x:1300,y:380,w:190,h:120,label:'그릇가게',icon:'🍶'}
+    ],
+    EXITS: (W,H)=>[
+      {x:0,   y:H/2-100, w:100, h:200, label:'정문(서)', type:'main'},
+      {x:W-100,y:H/2-100, w:100, h:200, label:'정문(동)', type:'main'}
+    ],
+    // 좌판 12개 앞면(통로 쪽 가장자리)을 따라 좌판 하나당 3자리씩 물건 슬롯을 미리
+    // 계산해둔다. generateItems()가 이 목록을 섞어서 순서대로 소비하기 때문에,
+    // 물건은 항상 벽(좌판)을 따라 나란히 늘어선 채로 스폰된다.
+    WALL_SLOTS: [
+      {x:175,y:150},{x:245,y:150},{x:315,y:150},
+      {x:405,y:150},{x:475,y:150},{x:545,y:150},
+      {x:635,y:150},{x:705,y:150},{x:775,y:150},
+      {x:865,y:150},{x:935,y:150},{x:1005,y:150},
+      {x:1095,y:150},{x:1165,y:150},{x:1235,y:150},
+      {x:1325,y:150},{x:1395,y:150},{x:1465,y:150},
+      {x:175,y:350},{x:245,y:350},{x:315,y:350},
+      {x:405,y:350},{x:475,y:350},{x:545,y:350},
+      {x:635,y:350},{x:705,y:350},{x:775,y:350},
+      {x:865,y:350},{x:935,y:350},{x:1005,y:350},
+      {x:1095,y:350},{x:1165,y:350},{x:1235,y:350},
+      {x:1325,y:350},{x:1395,y:350},{x:1465,y:350}
+    ]
   }
 };
 const DEFAULT_MAP_ID = 'classic';
 let MAP_W, MAP_H, OWNER_SPAWNS, THIEF_SPAWNS, OBSTACLES, EXITS, currentMapId;
-let INNER_ZONE, INNER_SPAWN_RATIO;
+let INNER_ZONE, INNER_SPAWN_RATIO, WALL_SLOTS;
 function applyMap(mapId){
   const m = MAPS[mapId] ? mapId : DEFAULT_MAP_ID;
   const def = MAPS[m];
@@ -492,6 +539,7 @@ function applyMap(mapId){
   OWNER_SPAWNS = def.OWNER_SPAWNS; THIEF_SPAWNS = def.THIEF_SPAWNS;
   OBSTACLES = def.OBSTACLES; EXITS = def.EXITS(MAP_W, MAP_H);
   INNER_ZONE = def.INNER_ZONE || null; INNER_SPAWN_RATIO = def.INNER_SPAWN_RATIO || 0;
+  WALL_SLOTS = def.WALL_SLOTS || null;
 }
 applyMap(DEFAULT_MAP_ID);
 
@@ -786,6 +834,14 @@ function populateMapSelect(){
 }
 
 // ---------------- host: start / restart round ----------------
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
 function generateItems(){
   const items = {};
   let idx = 0;
@@ -794,10 +850,19 @@ function generateItems(){
     {tier:'M', count:6, valMin:40, valMax:60, wMin:2, wMax:3},
     {tier:'L', count:2, valMin:100, valMax:150, wMin:4, wMax:5}
   ];
+  // 벽(좌판) 슬롯이 정의된 맵은 이 슬롯 목록을 섞어서 순서대로 소비해, 물건이
+  // 항상 벽을 따라 나란히 스폰되도록 강제한다. 슬롯이 소진되면 기존처럼
+  // 랜덤 배치로 폴백한다.
+  const slotQueue = WALL_SLOTS ? shuffle(WALL_SLOTS) : null;
   specs.forEach(spec=>{
     for(let i=0;i<spec.count;i++){
-      const preferInner = INNER_ZONE && Math.random() < INNER_SPAWN_RATIO;
-      const pos = randomFreePosition(preferInner);
+      let pos;
+      if(slotQueue && slotQueue.length){
+        pos = slotQueue.pop();
+      } else {
+        const preferInner = INNER_ZONE && Math.random() < INNER_SPAWN_RATIO;
+        pos = randomFreePosition(preferInner);
+      }
       items['i'+(idx++)] = {
         x:pos.x, y:pos.y, tier:spec.tier,
         value:randInt(spec.valMin, spec.valMax), weight:randInt(spec.wMin, spec.wMax),
