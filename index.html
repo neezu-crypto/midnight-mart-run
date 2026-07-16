@@ -768,7 +768,10 @@ async function hostStartRound(){
   updates[`rooms/${S.code}/timer`] = {startedAt: Date.now(), durationSec: ROUND_DURATION};
   updates[`rooms/${S.code}/items`] = items;
   updates[`rooms/${S.code}/finalizeRequestedAt`] = null;
-  updates[`rooms/${S.code}/arrestRequestedAt`] = null;
+  // null 대신 실제 타임스탬프를 써서 onArrestRequested 함수를 카운트다운 중에
+  // 미리 한 번 깨워둔다(콜드 스타트를 실제 체포 시점이 아닌 카운트다운 구간으로 숨김).
+  // 이 시점엔 phase가 아직 'playing'이 아니므로 함수는 곧바로 리턴하고 아무 일도 안 한다.
+  updates[`rooms/${S.code}/arrestRequestedAt`] = Date.now();
 
   Object.keys(S.players).forEach(id=>{
     const p = S.players[id];
