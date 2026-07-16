@@ -352,7 +352,7 @@ const auth = getAuth(app);
 // ---------------- constants (design doc numbers) ----------------
 const VIEW_W = 560, VIEW_H = 400;
 const SCALE = 1.5;
-const PLAYER_RADIUS = 14, PICKUP_RADIUS = 22;
+const PLAYER_RADIUS = 14, PICKUP_RADIUS = 22, ARREST_RADIUS = 50; // ARREST_RADIUS는 functions/index.js와 동일한 값이어야 즉시 사운드가 서버 판정과 어긋나지 않는다
 const BASE_SPEED = 130; // px/s (기존 260에서 -50%)
 const ROUND_DURATION = 90; // sec, placeholder — 다음 단계에서 밸런스 조정
 const ESCAPE_WINDOW_SEC = 15; // 남은 시간이 이 값 이하일 때만 탈출 가능
@@ -505,6 +505,7 @@ function playTone(freq, dur, type, category, delay=0){
 }
 function sfxPickup(){ playTone(880,0.09,'triangle','pickup'); }
 function sfxDrop(){ playTone(160,0.12,'sine','pickup'); }
+function sfxArrestAttempt(){ playTone(760,0.06,'square','action'); }
 function sfxArrestSuccess(){ playTone(420,0.14,'sawtooth','action'); playTone(220,0.22,'sawtooth','action',0.1); }
 function sfxWrongArrest(){ playTone(180,0.16,'square','action'); playTone(150,0.2,'square','action',0.12); }
 function sfxEscape(){ [523,659,784].forEach((f,i)=>playTone(f,0.16,'triangle','escape',i*0.09)); }
@@ -929,6 +930,18 @@ function arrestAttempt(){
   const me = S.players[mySessionId];
   if(!me) return;
   if(me.frozenUntil && Date.now() < me.frozenUntil) return;
+
+  // 최종 성공/실패는 서버(Cloud Function)가 판정하지만, 그 결과를 기다리는 동안
+  // 아무 피드백이 없으면 눌렀는지조차 알기 어렵다. 체포 가능 거리에 도둑이 있었다면
+  // 로컬에서 즉시 접촉음만 먼저 들려주고, 성공/오인 체포 사운드는 그대로 서버 응답을
+  // 받은 뒤(기존 로직)에 재생한다.
+  const inRange = Object.values(S.players).some((p)=>{
+    if(p.role !== 'thief' || p.status !== 'active') return false;
+    const dx = (p.x||0) - (me.x||0), dy = (p.y||0) - (me.y||0);
+    return dx*dx + dy*dy < ARREST_RADIUS*ARREST_RADIUS;
+  });
+  if(inRange) sfxArrestAttempt();
+
   update(ref(db, `rooms/${S.code}`), {arrestRequestedAt: Date.now()});
 }
 
