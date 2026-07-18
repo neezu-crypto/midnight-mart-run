@@ -197,6 +197,8 @@
 </head>
 <body>
 
+<audio id="bgm-audio" src="./Sound/Jazz%20In%20Paris%20-%20Media%20Right%20Productions.mp3" loop preload="auto"></audio>
+
 <nav id="topnav">
   <span class="topnav-brand">미드나잇 <span>마트런</span></span>
   <div class="topnav-right">
@@ -572,6 +574,7 @@ onAuthStateChanged(auth, (user)=>{
 
 // ---------------- sound (Web Audio, no external asset files) ----------------
 const SOUND_CATEGORIES = {
+  bgm: {label:'배경음악'},
   pickup: {label:'줍기 / 내려놓기'},
   action: {label:'체포 / 사과'},
   escape: {label:'탈출'},
@@ -595,8 +598,25 @@ function ensureAudio(){
     try{ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return; }
   }
   if(audioCtx.state === 'suspended') audioCtx.resume();
+  ensureBgmPlaying();
 }
 ['pointerdown','keydown'].forEach(evt => window.addEventListener(evt, ensureAudio, {once:false}));
+
+const MAX_BGM_GAIN = 0.15; // 슬라이더 100%에서도 실제 배경음악 음량은 이 값을 넘지 않음
+const bgmAudio = document.getElementById('bgm-audio');
+function applyBgmVolume(){
+  const c = soundSettings.bgm;
+  const vol = (c && c.on) ? c.vol * MAX_BGM_GAIN : 0;
+  bgmAudio.volume = vol;
+  if(!c || !c.on){ bgmAudio.pause(); }
+  else if(bgmAudio.paused){ bgmAudio.play().catch(()=>{}); }
+}
+function ensureBgmPlaying(){
+  applyBgmVolume();
+  if(soundSettings.bgm.on && bgmAudio.paused){ bgmAudio.play().catch(()=>{}); }
+}
+applyBgmVolume();
+bgmAudio.play().catch(()=>{}); // 자동재생이 차단되면 첫 사용자 입력 시 ensureAudio에서 재시도
 
 const MAX_SFX_GAIN = 0.15; // 슬라이더 100%에서도 실제 음량은 이 값을 넘지 않음
 function catVolume(category){
@@ -1508,11 +1528,13 @@ function buildSoundPanel(){
       soundSettings[key].on = onCk.checked;
       saveSoundSettings();
       updateSoundBtnIcon();
+      if(key === 'bgm') applyBgmVolume();
     });
     volInput.addEventListener('input', ()=>{
       soundSettings[key].vol = volInput.value/100;
       pct.textContent = volInput.value+'%';
       saveSoundSettings();
+      if(key === 'bgm') applyBgmVolume();
     });
   });
 }
