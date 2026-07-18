@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>미드나잇 마트런 — 실시간 술래잡기 웹게임</title>
+<meta name="description" content="한 명은 마트 주인, 최대 세 명은 도둑. 방 코드 하나로 친구·시청자와 함께 즐기는 실시간 추격 웹게임, 미드나잇 마트런.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #12151C;
+    --bg-raised: #191D27;
+    --ink: #EDEDE3;
+    --ink-dim: #9BA0AE;
+    --amber: #F5A623;
+    --amber-dim: #7A5A1E;
+    --alarm: #E4483D;
+    --mint: #4FD1C5;
+    --line: #2A2F3B;
+    --tape-black: #0C0E13;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Noto Sans KR', sans-serif;
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  .display{font-family:'Oswald', 'Noto Sans KR', sans-serif;}
+  .mono{font-family:'IBM Plex Mono', monospace;}
+
+  .wrap{max-width:980px; margin:0 auto; padding:0 28px;}
+  section{padding:80px 0;}
+  section + section{border-top:1px solid var(--line);}
+
+  /* ---------- hero ---------- */
+  .hero{
+    position:relative;
+    padding:120px 0 90px;
+    overflow:hidden;
+    background:
+      repeating-linear-gradient(135deg, transparent 0 22px, rgba(245,166,35,0.035) 22px 24px),
+      var(--bg);
+  }
+  .tape{
+    position:absolute; left:-8%; width:116%; height:34px;
+    background:repeating-linear-gradient(45deg, var(--amber) 0 18px, var(--tape-black) 18px 36px);
+    transform:rotate(-2.2deg);
+    opacity:0.9;
+  }
+  .tape.top{top:56px;}
+  .tape.bottom{bottom:40px; transform:rotate(1.6deg);}
+  .hero-inner{position:relative; z-index:2; text-align:center; max-width:680px; margin:0 auto;}
+  .eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12.5px;
+    letter-spacing:0.16em;
+    color:var(--amber);
+    text-transform:uppercase;
+    display:inline-block;
+    padding:6px 12px;
+    border:1px solid var(--amber-dim);
+    border-radius:2px;
+    margin-bottom:28px;
+  }
+  h1.title{
+    font-size:clamp(38px, 7vw, 68px);
+    font-weight:700;
+    letter-spacing:-0.01em;
+    line-height:1.05;
+    text-transform:uppercase;
+    margin-bottom:18px;
+  }
+  h1.title span{color:var(--amber);}
+  .subtitle{
+    font-size:17.5px;
+    color:var(--ink-dim);
+    margin:0 auto 36px;
+  }
+  .badge-row{display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-bottom:40px;}
+  .badge{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12.5px;
+    color:var(--ink);
+    background:var(--bg-raised);
+    border:1px solid var(--line);
+    border-radius:2px;
+    padding:8px 14px;
+  }
+  .badge b{color:var(--mint);}
+
+  .cta-row{display:flex; flex-wrap:wrap; gap:14px; justify-content:center;}
+  .btn{
+    display:inline-flex; align-items:center; gap:8px;
+    font-family:'Oswald', sans-serif;
+    font-size:16px; font-weight:600; letter-spacing:0.02em;
+    text-decoration:none;
+    padding:15px 30px;
+    border-radius:3px;
+    transition:transform .12s ease, opacity .12s ease;
+  }
+  .btn:hover{transform:translateY(-2px);}
+  .btn.primary{background:var(--amber); color:var(--tape-black);}
+  .btn.ghost{background:transparent; color:var(--ink); border:1px solid var(--line);}
+  .btn.ghost:hover{border-color:var(--mint); color:var(--mint);}
+
+  /* ---------- section headers ---------- */
+  .sec-head{margin-bottom:44px;}
+  .sec-num{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12.5px;
+    color:var(--amber);
+    letter-spacing:0.1em;
+  }
+  h2.sec-title{
+    font-family:'Oswald', sans-serif;
+    font-size:clamp(24px,4vw,32px);
+    font-weight:600;
+    text-transform:uppercase;
+    letter-spacing:0.01em;
+    margin-top:8px;
+  }
+  .sec-desc{color:var(--ink-dim); max-width:620px; margin-top:12px; font-size:15.5px;}
+
+  /* ---------- flow steps ---------- */
+  .flow{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:0;
+    position:relative;
+  }
+  .flow::before{
+    content:"";
+    position:absolute; top:22px; left:6%; right:6%; height:1px;
+    background:var(--line);
+  }
+  .flow-step{padding-right:18px; position:relative;}
+  .flow-num{
+    width:44px; height:44px; border-radius:50%;
+    background:var(--bg-raised); border:1px solid var(--amber-dim);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'IBM Plex Mono',monospace; color:var(--amber); font-size:15px;
+    position:relative; z-index:2; margin-bottom:18px;
+  }
+  .flow-step h3{font-size:16px; margin-bottom:8px; font-weight:700;}
+  .flow-step p{font-size:13.5px; color:var(--ink-dim);}
+
+  /* ---------- role cards ---------- */
+  .role-grid{display:grid; grid-template-columns:1fr 1fr; gap:20px;}
+  .role-card{
+    background:var(--bg-raised);
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:32px;
+    position:relative;
+    overflow:hidden;
+  }
+  .role-card.owner{border-top:3px solid var(--amber);}
+  .role-card.thief{border-top:3px solid var(--mint);}
+  .role-tag{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11.5px; letter-spacing:0.12em; text-transform:uppercase;
+  }
+  .role-card.owner .role-tag{color:var(--amber);}
+  .role-card.thief .role-tag{color:var(--mint);}
+  .role-card h3{font-size:24px; margin:10px 0 16px; font-family:'Oswald',sans-serif;}
+  .role-card ul{list-style:none;}
+  .role-card li{
+    font-size:14px; color:var(--ink-dim);
+    padding:9px 0; border-top:1px dashed var(--line);
+  }
+  .role-card li:first-of-type{border-top:none;}
+  .role-card li b{color:var(--ink); font-weight:600;}
+
+  /* ---------- feature grid ---------- */
+  .feat-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:16px;}
+  .feat-card{
+    background:var(--bg-raised);
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:22px 22px 20px;
+  }
+  .feat-icon{font-size:22px; margin-bottom:12px;}
+  .feat-card h4{font-size:15.5px; margin-bottom:8px;}
+  .feat-card p{font-size:13.3px; color:var(--ink-dim);}
+
+  /* ---------- receipt ---------- */
+  .receipt-wrap{display:flex; justify-content:center;}
+  .receipt{
+    width:100%;
+    max-width:400px;
+    background:#F4F1E6;
+    color:#1a1a1a;
+    font-family:'IBM Plex Mono', monospace;
+    padding:32px 26px 24px;
+    position:relative;
+    box-shadow:0 20px 50px rgba(0,0,0,0.45);
+  }
+  .receipt::before, .receipt::after{
+    content:"";
+    position:absolute; left:0; right:0; height:14px;
+    background:
+      radial-gradient(circle at 8px 7px, var(--bg) 7px, transparent 7.5px) repeat-x;
+    background-size:16px 14px;
+  }
+  .receipt::before{top:-7px;}
+  .receipt::after{bottom:-7px; transform:rotate(180deg);}
+  .receipt h4{
+    text-align:center;
+    font-size:15px; letter-spacing:0.14em;
+    margin-bottom:4px;
+  }
+  .receipt .sub{text-align:center; font-size:10.5px; color:#555; margin-bottom:18px;}
+  .receipt-line{
+    display:flex; justify-content:space-between;
+    font-size:12.5px; padding:5px 0;
+    border-bottom:1px dotted #b7b2a0;
+  }
+  .receipt-line.total{
+    border-bottom:none; border-top:1px solid #1a1a1a;
+    margin-top:8px; padding-top:10px;
+    font-size:13.5px; font-weight:700;
+  }
+  .receipt .barcode{
+    margin-top:20px; height:34px;
+    background:repeating-linear-gradient(90deg, #1a1a1a 0 2px, transparent 2px 5px, #1a1a1a 5px 6px, transparent 6px 9px);
+  }
+  .receipt .thanks{text-align:center; font-size:10.5px; color:#666; margin-top:12px;}
+
+  /* ---------- controls ---------- */
+  .schema-block{
+    background:var(--bg-raised);
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:22px 24px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12.5px;
+    line-height:1.9;
+    color:var(--ink-dim);
+    overflow-x:auto;
+    white-space:pre;
+  }
+  .schema-block .c{color:var(--ink-dim); font-style:italic;}
+
+  /* ---------- faq ---------- */
+  .faq-item{padding:22px 0; border-top:1px dashed var(--line);}
+  .faq-item:first-child{border-top:none;}
+  .faq-q{font-weight:700; font-size:15.5px; margin-bottom:8px;}
+  .faq-q::before{content:"Q. "; color:var(--amber);}
+  .faq-a{font-size:14px; color:var(--ink-dim);}
+  .faq-a::before{content:"A. "; color:var(--mint); font-weight:700;}
+
+  /* ---------- final cta ---------- */
+  .final-cta{text-align:center;}
+  .final-cta .sec-desc{margin:12px auto 36px;}
+
+  footer{padding:40px 0 70px; text-align:center; color:var(--ink-dim); font-size:12.5px; font-family:'IBM Plex Mono',monospace;}
+  footer a{color:var(--ink-dim);}
+
+  @media (max-width:760px){
+    .flow{grid-template-columns:1fr; gap:26px;}
+    .flow::before{display:none;}
+    .role-grid{grid-template-columns:1fr;}
+    .feat-grid{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="tape top"></div>
+  <div class="wrap hero-inner">
+    <span class="eyebrow">무료 실시간 웹게임 · 설치 없이 브라우저에서 바로</span>
+    <h1 class="title">미드나잇<br><span>마트런</span></h1>
+    <p class="subtitle">한 명은 마트를 지키는 <b style="color:var(--amber)">주인</b>, 최대 세 명은 물건을 훔쳐 달아나는 <b style="color:var(--mint)">도둑</b>이 되는 실시간 추격전. 방 코드 하나면 친구든 시청자든 바로 같이 즐길 수 있어요.</p>
+    <div class="badge-row">
+      <span class="badge">인원 <b>1 주인 + 최대 3 도둑</b></span>
+      <span class="badge">플레이 시간 <b>약 90초 / 라운드</b></span>
+      <span class="badge">준비물 <b>브라우저만 있으면 OK</b></span>
+      <span class="badge">추천 <b>스트리머 · 시청자 참여형</b></span>
+    </div>
+    <div class="cta-row">
+      <a class="btn primary" href="./index.html">지금 플레이하기 →</a>
+      <a class="btn ghost" href="https://www.sooplive.com/station/skftodwocks2" target="_blank" rel="noopener noreferrer">개발자 방송국 바로가기</a>
+    </div>
+  </div>
+  <div class="tape bottom"></div>
+</div>
+
+<section id="what">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">01 — WHAT IS THIS</span>
+      <h2 class="sec-title">한밤중 마트에서 벌어지는 숨바꼭질</h2>
+      <p class="sec-desc">문 닫은 마트에 도둑이 숨어들었습니다. 주인은 매장을 돌며 도둑을 붙잡아야 하고, 도둑은 물건을 최대한 챙겨 출구로 튀어야 합니다. 로그인도, 설치도 필요 없이 닉네임 하나와 방 코드만 있으면 바로 시작됩니다.</p>
+    </div>
+    <div class="flow">
+      <div class="flow-step">
+        <div class="flow-num">1</div>
+        <h3>방 만들기</h3>
+        <p>닉네임을 입력하고 [방 만들기]를 누르면 자동으로 마트 주인이 되고, 6자리 방 코드가 발급됩니다.</p>
+      </div>
+      <div class="flow-step">
+        <div class="flow-num">2</div>
+        <h3>코드 공유</h3>
+        <p>방 코드를 친구나 시청자에게 공유하면, 코드를 입력한 사람은 자동으로 도둑이 되어 입장합니다.</p>
+      </div>
+      <div class="flow-step">
+        <div class="flow-num">3</div>
+        <h3>추격전 시작</h3>
+        <p>짧은 카운트다운 후 마트 조명이 켜지며 라운드 시작. 도둑은 물건을 훔치고, 주인은 그들을 쫓습니다.</p>
+      </div>
+      <div class="flow-step">
+        <div class="flow-num">4</div>
+        <h3>정산 & 재시작</h3>
+        <p>전원 탈출/체포되거나 시간이 다 되면 영수증 형태로 결과가 출력되고, 주인은 [다시하기]로 바로 다음 판을 시작할 수 있습니다.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="roles">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">02 — ROLES</span>
+      <h2 class="sec-title">당신은 잡는 쪽인가, 훔치는 쪽인가</h2>
+      <p class="sec-desc">주인과 도둑 모두 서로 좁은 시야로만 상대를 볼 수 있어, 매 순간의 위치 싸움이 승부를 가릅니다.</p>
+    </div>
+    <div class="role-grid">
+      <div class="role-card owner">
+        <span class="role-tag">방장 · 1인</span>
+        <h3>마트 주인</h3>
+        <ul>
+          <li><b>목표</b> — 도둑이 물건을 갖고 나가지 못하게 막는다.</li>
+          <li><b>체포</b> — 도둑에게 다가가 <b>스페이스바</b>로 즉시 체포 판정.</li>
+          <li><b>주의</b> — 빈손인 도둑을 체포하면 오인 체포! 5초간 그 자리에 묶여 사과해야 한다.</li>
+          <li><b>스킬</b> — <b>시프트</b>로 순간 대시(쿨다운 10초)를 사용할 수 있다.</li>
+        </ul>
+      </div>
+      <div class="role-card thief">
+        <span class="role-tag">시청자 · 최대 3인</span>
+        <h3>도둑</h3>
+        <ul>
+          <li><b>목표</b> — 물건을 최대한 많이 챙겨 출구로 탈출한다.</li>
+          <li><b>줍기</b> — 물건에 닿기만 하면 자동으로 소지품에 추가된다.</li>
+          <li><b>탈출</b> — 남은 시간이 <b>15초 이하</b>일 때만 출구로 나갈 수 있다.</li>
+          <li><b>위기 대응</b> — 잡힐 것 같으면 <b>스페이스바</b>로 물건을 내려놓고 몸을 가볍게 만들 수 있다.</li>
+          <li><b>탈락</b> — 체포되면 그 라운드에서는 탈락하지만, 살아있는 동료가 있다면 그 시점으로 관전할 수 있다.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">03 — FEATURES</span>
+      <h2 class="sec-title">긴장감을 만드는 장치들</h2>
+      <p class="sec-desc">단순한 술래잡기가 아니라, 무게·시야·시간 제한이 서로 맞물려 매 판 다른 선택을 강요합니다.</p>
+    </div>
+    <div class="feat-grid">
+      <div class="feat-card">
+        <div class="feat-icon">⚖️</div>
+        <h4>많이 들수록 느려진다</h4>
+        <p>훔친 물건의 무게만큼 이동 속도가 줄어듭니다. 욕심을 낼수록 도망칠 확률은 낮아지는 리스크-리턴 구조.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">👁️</div>
+        <h4>좁은 개별 시야</h4>
+        <p>미니맵은 없습니다. 주인과 도둑 모두 자신의 화면 안에 들어온 상대만 볼 수 있어, 감각과 기억력이 곧 실력입니다.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">⏱️</div>
+        <h4>탈출은 마지막 15초</h4>
+        <p>도둑은 라운드 종료 15초 전부터만 출구를 이용할 수 있습니다. 너무 일찍 서두를 필요도, 너무 늦게 움직일 여유도 없습니다.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">💨</div>
+        <h4>주인의 순간 대시</h4>
+        <p>시프트 키로 짧은 거리를 순간 이동하는 대시(쿨다운 10초)를 사용해, 놓칠 뻔한 도둑을 따라잡을 수 있습니다.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">😆</div>
+        <h4>이모지로 도발하기</h4>
+        <p>숫자 1~4로 감정을 표현하는 이모지를 띄울 수 있습니다. 도둑의 이모지는 화면 밖에 있어도 방향 표시로 주인에게 항상 보입니다.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">🗺️</div>
+        <h4>두 가지 맵</h4>
+        <p>기본 맵과 장애물이 빽빽한 고난도 맵 &ldquo;혼잡한 창고점&rdquo; 중 방장이 원하는 맵을 골라 시작할 수 있습니다.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="settlement">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">04 — SETTLEMENT</span>
+      <h2 class="sec-title">라운드가 끝나면, 영수증이 출력됩니다</h2>
+      <p class="sec-desc">누가 탈출했고 누가 잡혔는지, 각자 얼마를 벌었는지 마트 영수증 스타일로 한눈에 정리됩니다.</p>
+    </div>
+    <div class="receipt-wrap">
+      <div class="receipt">
+        <h4>MIDNIGHT MART</h4>
+        <div class="sub">ROUND SETTLEMENT</div>
+        <div class="receipt-line"><span>도둑A — 탈출 성공</span><span>+320</span></div>
+        <div class="receipt-line"><span>도둑B — 체포됨</span><span>+0</span></div>
+        <div class="receipt-line"><span>도둑C — 탈출 성공</span><span>+180</span></div>
+        <div class="receipt-line total"><span>1위</span><span>도둑A</span></div>
+        <div class="barcode"></div>
+        <div class="thanks">THANK YOU · COME AGAIN</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="controls">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">05 — CONTROLS</span>
+      <h2 class="sec-title">조작법은 간단합니다</h2>
+      <p class="sec-desc">키보드 하나로 끝. 별도 다운로드나 회원가입 없이 방 코드만 있으면 바로 참여할 수 있습니다.</p>
+    </div>
+    <div class="schema-block">MOVE      W A S D  /  방향키           <span class="c">// 대각선 이동 가능</span>
+ARREST    Space                     <span class="c">// 주인 전용 — 근접한 도둑 체포</span>
+DROP      Space                     <span class="c">// 도둑 전용 — 소지품 내려놓고 몸 가볍게</span>
+DASH      Shift                     <span class="c">// 주인 전용 — 순간 대시 (쿨다운 10초)</span>
+EMOTE     1 2 3 4                   <span class="c">// 감정 이모지 표시</span></div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-num">06 — FAQ</span>
+      <h2 class="sec-title">자주 묻는 질문</h2>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">설치하거나 로그인해야 하나요?</div>
+      <div class="faq-a">아니요. 브라우저에서 링크만 열면 바로 플레이할 수 있고, 닉네임 외에 별도 회원가입은 필요 없습니다.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">몇 명이 필요한가요?</div>
+      <div class="faq-a">최소 2명(주인 1 + 도둑 1)부터 시작할 수 있고, 최대 4명(주인 1 + 도둑 3)까지 함께할 수 있습니다.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">스트리밍 중에도 쓸 수 있나요?</div>
+      <div class="faq-a">네, 방장이 방을 만들고 시청자가 방 코드로 입장하는 구조라 스트리머와 시청자가 함께 즐기는 참여형 콘텐츠로 적합합니다.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">한 판이 끝나면 다시 하려면 어떻게 하나요?</div>
+      <div class="faq-a">정산 화면에서 방장이 [다시하기]를 누르면 같은 방에서 물건과 위치, 점수가 초기화된 채 바로 다음 라운드를 시작할 수 있습니다.</div>
+    </div>
+  </div>
+</section>
+
+<section id="cta" class="final-cta">
+  <div class="wrap">
+    <span class="sec-num">READY?</span>
+    <h2 class="sec-title">지금 마트 문을 여세요</h2>
+    <p class="sec-desc">방을 만들고 코드를 공유하는 데 10초도 걸리지 않습니다.</p>
+    <div class="cta-row">
+      <a class="btn primary" href="./index.html">지금 플레이하기 →</a>
+    </div>
+  </div>
+</section>
+
+<footer>MIDNIGHT MART RUN · <a href="https://www.sooplive.com/station/skftodwocks2" target="_blank" rel="noopener noreferrer">개발자 방송국</a></footer>
+
+</body>
+</html>
