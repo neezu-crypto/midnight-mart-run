@@ -749,6 +749,8 @@ async function joinRoom(){
 let roomListenersAttached = false;
 function enterRoom(code, role, isHost){
   S.code = code; S.role = role; S.isHost = isHost;
+  window.__gameSeriesEmoteRoomId = code;
+  window.dispatchEvent(new CustomEvent('game-series-emote-room-change', {detail:{roomId:code}}));
   document.getElementById('hud-owner').classList.toggle('hidden', role!=='owner');
   document.getElementById('hud-thief').classList.toggle('hidden', role!=='thief');
   document.getElementById('controls-hint').textContent = role==='owner'
@@ -1578,5 +1580,6 @@ document.getElementById('btn-restart').addEventListener('click', hostStartRound)
 document.getElementById('btn-leave-lobby').addEventListener('click', leaveRoom);
 document.getElementById('btn-leave-settled').addEventListener('click', leaveRoom);
 </script>
+  <script type="module" src="https://neezu-crypto.github.io/streamer-game-series-shop/game-series-emotes.js?game=midnightMartRun"></script>
 </body>
 </html>
